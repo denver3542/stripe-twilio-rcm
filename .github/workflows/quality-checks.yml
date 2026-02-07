@@ -1,0 +1,38 @@
+name: Quality Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: npm run lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run lint
+        run: npm run lint
+
+  pint:
+    name: vendor/bin/pint --test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Run Pint
+        run: vendor/bin/pint --test
