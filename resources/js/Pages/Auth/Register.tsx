@@ -26,6 +26,15 @@ export default function Register() {
         <GuestLayout>
             <Head title="Register" />
 
+            <div className="mb-6 border-b border-slate-100 pb-4">
+                <h1 className="text-lg font-semibold text-slate-900">
+                    Create Account
+                </h1>
+                <p className="mt-1 text-sm text-slate-500">
+                    Set up your access to the portal.
+                </p>
+            </div>
+
             <form onSubmit={submit}>
                 <div>
                     <InputLabel htmlFor="name" value="Name" />
@@ -103,7 +112,7 @@ export default function Register() {
                     />
                 </div>
 
-                <div className="mt-4 flex items-center justify-end">
+                <div className="mt-6 flex items-center justify-between">
                     <Link
                         href={route('login')}
                         className="rounded-md text-sm text-brand-700 underline decoration-brand-400/60 underline-offset-4 hover:text-brand-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 focus:ring-offset-white"
@@ -111,7 +120,7 @@ export default function Register() {
                         Already registered?
                     </Link>
 
-                    <PrimaryButton className="ms-4" disabled={processing}>
+                    <PrimaryButton disabled={processing}>
                         Register
                     </PrimaryButton>
                 </div>

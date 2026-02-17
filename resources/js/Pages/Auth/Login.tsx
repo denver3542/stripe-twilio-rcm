@@ -38,6 +38,13 @@ export default function Login({
                 </div>
             )}
 
+            <div className="mb-6 border-b border-slate-100 pb-4">
+                <h1 className="text-lg font-semibold text-slate-900">Log in</h1>
+                <p className="mt-1 text-sm text-slate-500">
+                    Access your account to continue.
+                </p>
+            </div>
+
             <form onSubmit={submit}>
                 <div>
                     <InputLabel htmlFor="email" value="Email" />
@@ -90,7 +97,7 @@ export default function Login({
                     </label>
                 </div>
 
-                <div className="mt-4 flex items-center justify-end">
+                <div className="mt-6 flex items-center justify-between">
                     {canResetPassword && (
                         <Link
                             href={route('password.request')}
@@ -100,7 +107,7 @@ export default function Login({
                         </Link>
                     )}
 
-                    <PrimaryButton className="ms-4" disabled={processing}>
+                    <PrimaryButton disabled={processing}>
                         Log in
                     </PrimaryButton>
                 </div>
