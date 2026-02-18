@@ -33,6 +33,24 @@ export default function Authenticated({
                                 >
                                     Dashboard
                                 </NavLink>
+                                <NavLink
+                                    href={route('clients.index')}
+                                    active={route().current('clients.*')}
+                                >
+                                    Clients
+                                </NavLink>
+                                <NavLink
+                                    href={route('clients.import')}
+                                    active={route().current('clients.import')}
+                                >
+                                    Import
+                                </NavLink>
+                                <NavLink
+                                    href={route('invoices.index')}
+                                    active={route().current('invoices.*')}
+                                >
+                                    Invoices
+                                </NavLink>
                             </div>
                         </div>
 
@@ -136,6 +154,24 @@ export default function Authenticated({
                             active={route().current('dashboard')}
                         >
                             Dashboard
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            href={route('clients.index')}
+                            active={route().current('clients.*')}
+                        >
+                            Clients
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            href={route('clients.import')}
+                            active={route().current('clients.import')}
+                        >
+                            Import
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            href={route('invoices.index')}
+                            active={route().current('invoices.*')}
+                        >
+                            Invoices
                         </ResponsiveNavLink>
                     </div>
 
