@@ -10,6 +10,7 @@ class PaymentLink extends Model
     protected $fillable = [
         'client_id',
         'stripe_payment_link_url',
+        'short_url',
         'stripe_payment_link_id',
         'amount',
         'description',

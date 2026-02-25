@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\PaymentLink;
 use App\Repositories\Contracts\PaymentLinkRepositoryInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class PaymentLinkService
@@ -26,6 +27,7 @@ class PaymentLinkService
         return $this->paymentLinks->create([
             'client_id'               => $client->id,
             'stripe_payment_link_url' => $stripeLink->url,
+            'short_url'               => $this->shortenUrl($stripeLink->url),
             'stripe_payment_link_id'  => $stripeLink->id,
             'amount'                  => $validated['amount'],
             'description'             => $description,
@@ -55,8 +57,10 @@ class PaymentLinkService
 
         $firstName = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
 
+        $payUrl = $link->short_url ?? $link->stripe_payment_link_url;
+
         $body = "True Sport PT: Hi {$firstName}, you have a \${$link->amount} balance due. "
-            . "Pay here: {$link->stripe_payment_link_url}. "
+            . "Pay here: {$payUrl}. "
             . "Questions? Call 443 249 2990. Thank you!";
 
         $result = $this->twilio->sendSms($phone, $body);
@@ -84,6 +88,21 @@ class PaymentLinkService
             'recent_paid'            => $this->paymentLinks->recentPaid(5),
             'pending_count'          => $this->paymentLinks->pendingCount(),
         ];
+    }
+
+    private function shortenUrl(string $url): ?string
+    {
+        try {
+            $response = Http::timeout(5)->get('https://tinyurl.com/api-create.php', ['url' => $url]);
+
+            if ($response->successful() && str_starts_with($response->body(), 'https://')) {
+                return trim($response->body());
+            }
+        } catch (\Throwable $e) {
+            Log::warning("TinyURL shortening failed: " . $e->getMessage());
+        }
+
+        return null;
     }
 
     private function normalizePhone(string $phone): string
