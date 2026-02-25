@@ -53,12 +53,11 @@ class PaymentLinkService
             $client->mobile_phone ?? $client->phone ?? ''
         );
 
-        $firstName = $client->first_name ?? '';
-        $lastName  = $client->last_name  ?? '';
-        $name      = trim($client->name ?? "{$firstName} {$lastName}") ?: "Patient #{$client->id}";
+        $firstName = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
 
-        $body = "Hi {$name}, you have an outstanding balance of \${$link->amount}. "
-            . "Please make your payment here: {$link->stripe_payment_link_url}\n\nReply STOP to opt out.";
+        $body = "True Sport PT: Hi {$firstName}, you have a \${$link->amount} balance due. "
+            . "Pay here: {$link->stripe_payment_link_url}. "
+            . "Questions? Call 443 249 2990. Thank you!";
 
         $result = $this->twilio->sendSms($phone, $body);
 

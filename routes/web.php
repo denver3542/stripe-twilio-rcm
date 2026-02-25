@@ -36,6 +36,7 @@ Route::middleware('auth')->group(function () {
     Route::resource('clients', ClientController::class);
 
     Route::get('payment-links', [PaymentLinkController::class, 'index'])->name('payment-links.index');
+    Route::post('payment-links/batch-send-sms', [PaymentLinkController::class, 'batchSendSms'])->name('payment-links.batch-send-sms');
     Route::post('clients/{client}/payment-links', [PaymentLinkController::class, 'store'])
         ->name('payment-links.store');
     Route::post('payment-links/{paymentLink}/send-sms', [PaymentLinkController::class, 'sendSms'])

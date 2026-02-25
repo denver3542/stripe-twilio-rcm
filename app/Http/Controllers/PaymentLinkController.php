@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\PaymentLink\StorePaymentLinkRequest;
+use App\Jobs\BatchSendPaymentLinkSmsJob;
 use App\Models\Client;
 use App\Models\PaymentLink;
 use App\Services\PaymentLinkService;
@@ -35,9 +36,15 @@ class PaymentLinkController extends Controller
             });
         }
 
+        $unsentCount  = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')->count();
+        $nextBatchIds = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')
+            ->orderBy('id')->limit(160)->pluck('id')->toArray();
+
         return Inertia::render('PaymentLinks/Index', [
-            'links'   => $query->paginate(25)->withQueryString(),
-            'filters' => $request->only(['status', 'search']),
+            'links'         => $query->paginate(25)->withQueryString(),
+            'filters'       => $request->only(['status', 'search']),
+            'unsent_count'  => $unsentCount,
+            'next_batch_ids' => $nextBatchIds,
         ]);
     }
 
@@ -61,6 +68,27 @@ class PaymentLinkController extends Controller
             Log::error("Failed to send SMS for PaymentLink #{$paymentLink->id}: " . $e->getMessage());
             return redirect()->back()->with('error', 'Failed to send SMS. Please try again.');
         }
+    }
+
+    public function batchSendSms(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'link_ids'   => ['required', 'array', 'min:1', 'max:160'],
+            'link_ids.*' => ['integer', 'exists:payment_links,id'],
+        ]);
+
+        $eligible = PaymentLink::whereIn('id', $request->link_ids)
+            ->where('payment_status', 'pending')
+            ->where('sms_status', 'not_sent')
+            ->count();
+
+        if ($eligible === 0) {
+            return redirect()->back()->with('error', 'No eligible payment links in the selected batch.');
+        }
+
+        BatchSendPaymentLinkSmsJob::dispatch($request->link_ids);
+
+        return redirect()->back()->with('success', "Queued SMS for up to {$eligible} payment links.");
     }
 
     public function destroy(PaymentLink $paymentLink): RedirectResponse
