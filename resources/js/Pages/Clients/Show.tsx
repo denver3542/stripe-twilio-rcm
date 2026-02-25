@@ -1,10 +1,11 @@
 import DangerButton from '@/Components/DangerButton';
+import Modal from '@/Components/Modal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import {
-    AccountStatus, Client, Encounter, Invoice, InvoiceStatus,
-    PatientAuthorization, PatientInsurance, PageProps,
+    AccountStatus, Client, ClientPayment, Encounter,
+    PatientAuthorization, PatientInsurance, PageProps, PaymentLink, PaymentSmsStatus, PaymentStatus,
 } from '@/types';
-import { Head, Link, useForm } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 
 const accountStatusColors: Record<AccountStatus, string> = {
@@ -13,11 +14,17 @@ const accountStatusColors: Record<AccountStatus, string> = {
     pending:  'bg-amber-50 text-amber-700 border border-amber-200',
 };
 
-const invoiceStatusColors: Record<InvoiceStatus, string> = {
+const paymentStatusColors: Record<PaymentStatus, string> = {
     paid:    'bg-brand-50 text-brand-700 border border-brand-200',
-    unpaid:  'bg-slate-100 text-slate-600 border border-slate-200',
-    pending: 'bg-purple-50 text-purple-700 border border-purple-200',
-    overdue: 'bg-red-50 text-red-700 border border-red-200',
+    pending: 'bg-amber-50 text-amber-700 border border-amber-200',
+    failed:  'bg-red-50 text-red-700 border border-red-200',
+    expired: 'bg-slate-100 text-slate-500 border border-slate-200',
+};
+
+const smsStatusColors: Record<PaymentSmsStatus, string> = {
+    not_sent: 'bg-slate-100 text-slate-500 border border-slate-200',
+    sent:     'bg-brand-50 text-brand-700 border border-brand-200',
+    failed:   'bg-red-50 text-red-700 border border-red-200',
 };
 
 function displayName(client: Client): string {
@@ -32,7 +39,7 @@ function formatPhone(phone: string | null | undefined): string {
     return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : phone;
 }
 
-function fmt(amount: number | null | undefined): string {
+function fmt(amount: number | string | null | undefined): string {
     return `$${Number(amount ?? 0).toFixed(2)}`;
 }
 
@@ -126,24 +133,40 @@ function AuthCard({ auth }: { auth: PatientAuthorization }) {
     );
 }
 
-type Tab = 'overview' | 'insurance' | 'authorizations' | 'encounters' | 'invoices';
+type Tab = 'overview' | 'insurance' | 'authorizations' | 'encounters' | 'payment-links' | 'payments';
 
 type ShowClient = Client & {
-    invoices: Invoice[];
+    payment_links: PaymentLink[];
     patient_insurances: PatientInsurance[];
     patient_authorizations: PatientAuthorization[];
     encounters: Encounter[];
+    client_payments: ClientPayment[];
 };
 
 export default function Show({ client }: PageProps<{ client: ShowClient }>) {
+    const { flash } = usePage<PageProps>().props;
     const { delete: destroy, processing } = useForm({});
     const [tab, setTab] = useState<Tab>('overview');
+    const [showGenerateModal, setShowGenerateModal] = useState(false);
 
     const insurances     = client.patient_insurances     ?? [];
     const authorizations = client.patient_authorizations ?? [];
     const encounters     = client.encounters             ?? [];
-    const invoices       = client.invoices               ?? [];
+    const paymentLinks   = client.payment_links          ?? [];
+    const payments       = client.client_payments        ?? [];
     const hasImportedData = !!client.external_patient_id;
+
+    const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount_paid), 0);
+
+    // Default amount for new link = patient_balance if > 0, else outstanding_balance
+    const defaultAmount = Number(client.patient_balance) > 0
+        ? client.patient_balance
+        : client.outstanding_balance;
+
+    const generateForm = useForm({
+        amount:      String(Number(defaultAmount ?? 0).toFixed(2)),
+        description: '',
+    });
 
     function handleDelete() {
         if (confirm(`Delete "${displayName(client)}"? This will also delete all associated records.`)) {
@@ -151,12 +174,23 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
         }
     }
 
+    function submitGenerateLink(e: React.FormEvent) {
+        e.preventDefault();
+        generateForm.post(route('payment-links.store', client.id), {
+            onSuccess: () => {
+                setShowGenerateModal(false);
+                generateForm.reset();
+            },
+        });
+    }
+
     const tabs: { id: Tab; label: string; count?: number }[] = [
         { id: 'overview',       label: 'Overview' },
         { id: 'insurance',      label: 'Insurance',      count: insurances.length     || undefined },
         { id: 'authorizations', label: 'Authorizations', count: authorizations.length || undefined },
         { id: 'encounters',     label: 'Encounters',     count: encounters.length     || undefined },
-        { id: 'invoices',       label: 'Invoices',       count: invoices.length       || undefined },
+        { id: 'payment-links',  label: 'Payment Links',  count: paymentLinks.length   || undefined },
+        { id: 'payments',       label: 'Payments',       count: payments.length       || undefined },
     ];
 
     return (
@@ -192,6 +226,18 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
 
             <div className="py-6">
                 <div className="mx-auto max-w-7xl space-y-5 sm:px-6 lg:px-8">
+
+                    {/* Flash messages */}
+                    {flash?.success && (
+                        <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700">
+                            {flash.success}
+                        </div>
+                    )}
+                    {flash?.error && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            {flash.error}
+                        </div>
+                    )}
 
                     {/* Financial summary bar */}
                     {hasImportedData && (
@@ -361,58 +407,223 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                     )
                             )}
 
-                            {/* Invoices */}
-                            {tab === 'invoices' && (
+                            {/* Payment Links */}
+                            {tab === 'payment-links' && (
                                 <div>
                                     <div className="mb-4 flex items-center justify-between">
                                         <p className="text-sm text-slate-500">
-                                            {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
-                                            {invoices.length === 20 ? ' (most recent 20)' : ''}
+                                            {paymentLinks.length} payment link{paymentLinks.length !== 1 ? 's' : ''}
                                         </p>
-                                        <Link href={`${route('invoices.create')}?client_id=${client.id}`}
-                                            className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition hover:bg-brand-700">
-                                            + New Invoice
-                                        </Link>
+                                        <button
+                                            onClick={() => setShowGenerateModal(true)}
+                                            className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition hover:bg-brand-700"
+                                        >
+                                            + Generate New Link
+                                        </button>
                                     </div>
-                                    {invoices.length === 0
-                                        ? <p className="py-8 text-center text-sm text-slate-400">No invoices for this client yet.</p>
-                                        : (
+                                    {paymentLinks.length === 0 ? (
+                                        <p className="py-8 text-center text-sm text-slate-400">No payment links yet. Generate one above.</p>
+                                    ) : (
+                                        <div className="overflow-x-auto -mx-6 px-6">
+                                            <table className="min-w-full divide-y divide-slate-100 text-sm">
+                                                <thead>
+                                                    <tr>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Amount</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Description</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Payment</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">SMS</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Paid At</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Link</th>
+                                                        <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Actions</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {paymentLinks.map((link: PaymentLink) => (
+                                                        <tr key={link.id} className="hover:bg-slate-50">
+                                                            <td className="whitespace-nowrap py-2.5 pr-4 font-semibold text-slate-900">
+                                                                {fmt(link.amount)}
+                                                            </td>
+                                                            <td className="py-2.5 pr-4 text-slate-600 max-w-[160px] truncate">
+                                                                {link.description ?? <span className="text-slate-300">—</span>}
+                                                            </td>
+                                                            <td className="whitespace-nowrap py-2.5 pr-4">
+                                                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${paymentStatusColors[link.payment_status]}`}>
+                                                                    {link.payment_status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="whitespace-nowrap py-2.5 pr-4">
+                                                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${smsStatusColors[link.sms_status]}`}>
+                                                                    {link.sms_status === 'not_sent' ? 'not sent' : link.sms_status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="whitespace-nowrap py-2.5 pr-4 text-slate-500 text-xs">
+                                                                {fmtDate(link.paid_at)}
+                                                            </td>
+                                                            <td className="py-2.5 pr-4">
+                                                                {link.stripe_payment_link_url ? (
+                                                                    <a
+                                                                        href={link.stripe_payment_link_url}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className="text-xs text-stripe-600 hover:underline"
+                                                                    >
+                                                                        Open ↗
+                                                                    </a>
+                                                                ) : <span className="text-slate-300">—</span>}
+                                                            </td>
+                                                            <td className="whitespace-nowrap py-2.5">
+                                                                <div className="flex items-center gap-2">
+                                                                    {link.payment_status === 'pending' && link.sms_status !== 'sent' && (
+                                                                        <Link
+                                                                            href={route('payment-links.send-sms', link.id)}
+                                                                            method="post"
+                                                                            as="button"
+                                                                            className="text-xs font-medium text-brand-700 hover:text-brand-900"
+                                                                        >
+                                                                            Send SMS
+                                                                        </Link>
+                                                                    )}
+                                                                    <Link
+                                                                        href={route('payment-links.destroy', link.id)}
+                                                                        method="delete"
+                                                                        as="button"
+                                                                        onBefore={() => confirm('Delete this payment link?')}
+                                                                        className="text-xs font-medium text-red-600 hover:text-red-800"
+                                                                    >
+                                                                        Delete
+                                                                    </Link>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Payments */}
+                            {tab === 'payments' && (
+                                <div>
+                                    {payments.length === 0 ? (
+                                        <p className="py-8 text-center text-sm text-slate-400">No payments recorded yet.</p>
+                                    ) : (
+                                        <>
+                                            {/* Summary */}
+                                            <div className="mb-5 flex items-center justify-between rounded-lg border border-brand-100 bg-brand-50 px-4 py-3">
+                                                <div>
+                                                    <p className="text-xs font-medium uppercase tracking-wider text-brand-500">Total Paid via Payment Link</p>
+                                                    <p className="mt-0.5 text-2xl font-bold text-brand-700">{fmt(totalPaid)}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Payments</p>
+                                                    <p className="mt-0.5 text-2xl font-bold text-slate-700">{payments.length}</p>
+                                                </div>
+                                            </div>
+
+                                            {/* Table */}
                                             <div className="overflow-x-auto -mx-6 px-6">
                                                 <table className="min-w-full divide-y divide-slate-100 text-sm">
                                                     <thead>
                                                         <tr>
-                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Invoice #</th>
                                                             <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Date</th>
-                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Amount Due</th>
-                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Paid</th>
-                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Status</th>
+                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Amount Paid</th>
+                                                            <th className="pb-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Stripe Session</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-50">
-                                                        {invoices.map((invoice) => (
-                                                            <tr key={invoice.id} className="hover:bg-slate-50">
-                                                                <td className="whitespace-nowrap py-2.5 pr-4">
-                                                                    <Link href={route('invoices.show', invoice.id)} className="font-medium text-brand-700 hover:text-brand-900">{invoice.invoice_number}</Link>
+                                                        {payments.map((payment) => (
+                                                            <tr key={payment.id} className="hover:bg-slate-50">
+                                                                <td className="whitespace-nowrap py-2.5 pr-4 text-slate-600">
+                                                                    {new Date(payment.paid_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                                 </td>
-                                                                <td className="whitespace-nowrap py-2.5 pr-4 text-slate-600">{invoice.service_date}</td>
-                                                                <td className="whitespace-nowrap py-2.5 pr-4 text-slate-900">{fmt(invoice.amount_due)}</td>
-                                                                <td className="whitespace-nowrap py-2.5 pr-4 text-slate-900">{fmt(invoice.amount_paid)}</td>
-                                                                <td className="whitespace-nowrap py-2.5">
-                                                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${invoiceStatusColors[invoice.status]}`}>{invoice.status}</span>
+                                                                <td className="whitespace-nowrap py-2.5 pr-4 font-semibold text-brand-700">
+                                                                    {fmt(payment.amount_paid)}
+                                                                </td>
+                                                                <td className="py-2.5 font-mono text-xs text-slate-400">
+                                                                    {payment.stripe_session_id}
                                                                 </td>
                                                             </tr>
                                                         ))}
                                                     </tbody>
                                                 </table>
                                             </div>
-                                        )
-                                    }
+                                        </>
+                                    )}
                                 </div>
                             )}
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Generate Payment Link Modal */}
+            <Modal show={showGenerateModal} onClose={() => setShowGenerateModal(false)}>
+                <form onSubmit={submitGenerateLink} className="p-6">
+                    <h2 className="text-lg font-semibold text-slate-900">Generate Payment Link</h2>
+                    <p className="mt-1 text-sm text-slate-500">Create a new Stripe payment link for {displayName(client)}.</p>
+
+                    <div className="mt-5 space-y-4">
+                        <div>
+                            <label htmlFor="amount" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Amount (USD) <span className="text-red-500">*</span>
+                            </label>
+                            <div className="relative mt-1">
+                                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">$</span>
+                                <input
+                                    id="amount"
+                                    type="number"
+                                    step="0.01"
+                                    min="0.01"
+                                    value={generateForm.data.amount}
+                                    onChange={(e) => generateForm.setData('amount', e.target.value)}
+                                    className="block w-full rounded-md border border-slate-300 pl-7 pr-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
+                                    required
+                                />
+                            </div>
+                            {generateForm.errors.amount && (
+                                <p className="mt-1 text-xs text-red-600">{generateForm.errors.amount}</p>
+                            )}
+                        </div>
+
+                        <div>
+                            <label htmlFor="description" className="block text-xs font-medium uppercase tracking-wide text-slate-500">
+                                Description (optional)
+                            </label>
+                            <input
+                                id="description"
+                                type="text"
+                                maxLength={255}
+                                value={generateForm.data.description}
+                                onChange={(e) => generateForm.setData('description', e.target.value)}
+                                placeholder="e.g. Monthly balance, Co-pay..."
+                                className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:ring-brand-500"
+                            />
+                            {generateForm.errors.description && (
+                                <p className="mt-1 text-xs text-red-600">{generateForm.errors.description}</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowGenerateModal(false)}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={generateForm.processing}
+                            className="inline-flex items-center rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                            {generateForm.processing ? 'Generating…' : 'Generate Link'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </AuthenticatedLayout>
     );
 }

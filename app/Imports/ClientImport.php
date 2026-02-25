@@ -46,7 +46,8 @@ class ClientImport implements ToCollection, WithChunkReading
     public int $created = 0;
     public int $updated = 0;
     public int $failed  = 0;
-    public array $errors = [];
+    public array $errors      = [];
+    public array $createdIds  = [];
 
     private int $rowNumber = 0;
 
@@ -90,6 +91,7 @@ class ClientImport implements ToCollection, WithChunkReading
 
                     if ($client->wasRecentlyCreated) {
                         $this->created++;
+                        $this->createdIds[] = $client->id;
                     } else {
                         $this->updated++;
                     }

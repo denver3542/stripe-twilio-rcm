@@ -1,17 +1,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Client, DashboardStats, Invoice, InvoiceStatus, PageProps } from '@/types';
+import { Client, DashboardStats, PageProps, PaymentLink } from '@/types';
 import { Head, Link } from '@inertiajs/react';
 import { type ReactNode } from 'react';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmt(amount: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+function fmt(amount: number | string): string {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(amount));
 }
 
 function fmtDate(dateStr: string | null | undefined): string {
     if (!dateStr) return '—';
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+    return new Date(dateStr).toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric',
     });
 }
@@ -22,26 +22,13 @@ function patientName(client: Client): string {
     return parts.length ? parts.join(' ') : '—';
 }
 
-// ─── Style maps ──────────────────────────────────────────────────────────────
-
-const statusColors: Record<InvoiceStatus, string> = {
-    paid:    'bg-brand-50 text-brand-700 border border-brand-200',
-    unpaid:  'bg-slate-100 text-slate-600 border border-slate-200',
-    pending: 'bg-purple-50 text-purple-700 border border-purple-200',
-    overdue: 'bg-red-50 text-red-700 border border-red-200',
-};
-
-const statusLabels: Record<InvoiceStatus, string> = {
-    paid: 'Paid', unpaid: 'Unpaid', pending: 'Pending', overdue: 'Overdue',
-};
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 interface StatCardProps {
     label: string;
     value: string;
     sub?: string;
-    accent: string; // tailwind border-l-* class
+    accent: string;
     icon: ReactNode;
 }
 
@@ -60,14 +47,11 @@ function StatCard({ label, value, sub, accent, icon }: StatCardProps) {
     );
 }
 
-type InvoiceRow = Invoice & { client: Client };
+type RecentPaymentRow = PaymentLink & { client: Client };
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }>) {
-    const sc = stats.status_counts;
-    const totalInvoicesWithStatus = Object.values(sc).reduce((a, b) => a + (b ?? 0), 0);
-
     return (
         <AuthenticatedLayout
             header={
@@ -84,10 +68,10 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                             + New Patient
                         </Link>
                         <Link
-                            href={route('invoices.create')}
+                            href={route('clients.index')}
                             className="inline-flex items-center rounded-md bg-brand-600 px-3 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition hover:bg-brand-700"
                         >
-                            + New Invoice
+                            View Patients
                         </Link>
                     </div>
                 </div>
@@ -103,7 +87,7 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                         <StatCard
                             label="Total Outstanding"
                             value={fmt(stats.total_outstanding)}
-                            sub="Unpaid + pending + overdue"
+                            sub="Sum of pending payment links"
                             accent="border-l-red-400"
                             icon={
                                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -113,8 +97,8 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                             }
                         />
                         <StatCard
-                            label="Collected This Month"
-                            value={fmt(stats.total_collected_this_month)}
+                            label="Paid This Month"
+                            value={fmt(stats.total_paid_this_month)}
                             sub={new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
                             accent="border-l-brand-500"
                             icon={
@@ -127,7 +111,7 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                         <StatCard
                             label="Total Patients"
                             value={stats.total_clients.toLocaleString()}
-                            sub={`${stats.total_invoices.toLocaleString()} invoice${stats.total_invoices !== 1 ? 's' : ''} total`}
+                            sub="Registered patients"
                             accent="border-l-slate-400"
                             icon={
                                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -137,195 +121,65 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                             }
                         />
                         <StatCard
-                            label="Needs Action"
-                            value={stats.needs_action_count.toLocaleString()}
-                            sub={stats.overdue_amount > 0 ? `${fmt(stats.overdue_amount)} overdue` : 'Unpaid invoices'}
+                            label="Active Links"
+                            value={stats.pending_count.toLocaleString()}
+                            sub="Pending payment links"
                             accent="border-l-amber-400"
                             icon={
                                 <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8}
-                                        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                                 </svg>
                             }
                         />
                     </div>
 
-                    {/* ── Invoice status breakdown ───────────────────────────── */}
-                    {totalInvoicesWithStatus > 0 && (
-                        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                            <h3 className="mb-4 text-xs font-semibold uppercase tracking-widest text-slate-500">Invoice Status Breakdown</h3>
-                            <div className="flex flex-wrap gap-4">
-                                {(['overdue', 'unpaid', 'pending', 'paid'] as InvoiceStatus[]).map((s) => {
-                                    const count = sc[s] ?? 0;
-                                    const pct = totalInvoicesWithStatus > 0 ? Math.round((count / totalInvoicesWithStatus) * 100) : 0;
-                                    return (
-                                        <Link
-                                            key={s}
-                                            href={route('invoices.index', { status: s })}
-                                            className="flex items-center gap-3 rounded-lg border border-slate-100 px-4 py-3 hover:border-slate-200 hover:bg-slate-50 transition-colors"
-                                        >
-                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[s]}`}>
-                                                {statusLabels[s]}
-                                            </span>
-                                            <span className="text-lg font-bold text-slate-800">{count.toLocaleString()}</span>
-                                            <span className="text-xs text-slate-400">{pct}%</span>
-                                        </Link>
-                                    );
-                                })}
+                    {/* ── Recent Payments ───────────────────────────────────── */}
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                            <div>
+                                <h3 className="text-sm font-semibold text-slate-900">Recent Payments</h3>
+                                <p className="text-xs text-slate-400">Latest paid payment links</p>
                             </div>
-                            {/* Progress bar */}
-                            <div className="mt-4 flex h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                                {(['overdue', 'unpaid', 'pending', 'paid'] as InvoiceStatus[]).map((s) => {
-                                    const pct = totalInvoicesWithStatus > 0
-                                        ? ((sc[s] ?? 0) / totalInvoicesWithStatus) * 100
-                                        : 0;
-                                    const colors: Record<InvoiceStatus, string> = {
-                                        overdue: 'bg-red-400',
-                                        unpaid: 'bg-slate-300',
-                                        pending: 'bg-purple-400',
-                                        paid: 'bg-brand-400',
-                                    };
-                                    return pct > 0 ? (
-                                        <div key={s} className={`${colors[s]} transition-all`} style={{ width: `${pct}%` }} />
-                                    ) : null;
-                                })}
-                            </div>
+                            <Link
+                                href={route('clients.index')}
+                                className="text-xs text-brand-700 hover:text-brand-900"
+                            >
+                                View all patients →
+                            </Link>
                         </div>
-                    )}
-
-                    {/* ── Two-column: Needs Action + Recent Payments ─────────── */}
-                    <div className="grid gap-6 lg:grid-cols-2">
-
-                        {/* Needs Action */}
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                                <div>
-                                    <h3 className="text-sm font-semibold text-slate-900">Needs Action</h3>
-                                    <p className="text-xs text-slate-400">Unpaid &amp; overdue invoices</p>
-                                </div>
-                                <Link
-                                    href={route('invoices.index', { status: 'overdue' })}
-                                    className="text-xs text-brand-700 hover:text-brand-900"
-                                >
-                                    View all →
-                                </Link>
+                        {stats.recent_paid.length === 0 ? (
+                            <div className="px-6 py-10 text-center text-sm text-slate-500">
+                                No payments recorded yet.
                             </div>
-                            {stats.needs_action_invoices.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-                                    <svg className="mb-2 h-8 w-8 text-brand-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <p className="text-sm font-medium text-slate-600">All caught up!</p>
-                                    <p className="text-xs text-slate-400">No unpaid or overdue invoices.</p>
-                                </div>
-                            ) : (
-                                <ul className="divide-y divide-slate-100">
-                                    {stats.needs_action_invoices.map((invoice: InvoiceRow) => (
-                                        <li key={invoice.id} className="group flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <Link
-                                                        href={route('invoices.show', invoice.id)}
-                                                        className="text-sm font-medium text-brand-700 hover:text-brand-900"
-                                                    >
-                                                        {invoice.invoice_number}
-                                                    </Link>
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[invoice.status]}`}>
-                                                        {statusLabels[invoice.status]}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-                                                    <Link
-                                                        href={route('clients.show', invoice.client.id)}
-                                                        className="hover:text-brand-700"
-                                                    >
-                                                        {patientName(invoice.client)}
-                                                    </Link>
-                                                    {invoice.service_date && (
-                                                        <>
-                                                            <span>·</span>
-                                                            <span>{fmtDate(invoice.service_date)}</span>
-                                                        </>
-                                                    )}
-                                                </div>
+                        ) : (
+                            <ul className="divide-y divide-slate-100">
+                                {stats.recent_paid.map((link: RecentPaymentRow) => (
+                                    <li key={link.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex items-center gap-2">
+                                                <Link
+                                                    href={route('clients.show', link.client_id)}
+                                                    className="text-sm font-medium text-brand-700 hover:text-brand-900"
+                                                >
+                                                    {patientName(link.client)}
+                                                </Link>
+                                                <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-brand-50 text-brand-700 border border-brand-200">
+                                                    Paid
+                                                </span>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-sm font-semibold text-red-600">
-                                                    {fmt(Number(invoice.amount_due) - Number(invoice.amount_paid))}
-                                                </p>
-                                                {!invoice.stripe_payment_link && (
-                                                    <Link
-                                                        href={route('invoices.show', invoice.id)}
-                                                        className="text-xs text-slate-400 hover:text-purple-700"
-                                                    >
-                                                        Get link →
-                                                    </Link>
-                                                )}
-                                            </div>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-
-                        {/* Recent Payments */}
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                                <div>
-                                    <h3 className="text-sm font-semibold text-slate-900">Recent Payments</h3>
-                                    <p className="text-xs text-slate-400">Latest paid invoices</p>
-                                </div>
-                                <Link
-                                    href={route('invoices.index', { status: 'paid' })}
-                                    className="text-xs text-brand-700 hover:text-brand-900"
-                                >
-                                    View all →
-                                </Link>
-                            </div>
-                            {stats.recent_payments.length === 0 ? (
-                                <div className="px-6 py-10 text-center text-sm text-slate-500">
-                                    No payments recorded yet.
-                                </div>
-                            ) : (
-                                <ul className="divide-y divide-slate-100">
-                                    {stats.recent_payments.map((invoice: InvoiceRow) => (
-                                        <li key={invoice.id} className="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors">
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-2">
-                                                    <Link
-                                                        href={route('invoices.show', invoice.id)}
-                                                        className="text-sm font-medium text-brand-700 hover:text-brand-900"
-                                                    >
-                                                        {invoice.invoice_number}
-                                                    </Link>
-                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[invoice.status]}`}>
-                                                        {statusLabels[invoice.status]}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
-                                                    <Link
-                                                        href={route('clients.show', invoice.client.id)}
-                                                        className="hover:text-brand-700"
-                                                    >
-                                                        {patientName(invoice.client)}
-                                                    </Link>
-                                                    {invoice.service_date && (
-                                                        <>
-                                                            <span>·</span>
-                                                            <span>{fmtDate(invoice.service_date)}</span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <p className="shrink-0 text-sm font-semibold text-brand-700">
-                                                {fmt(invoice.amount_paid)}
-                                            </p>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
+                                            {link.description && (
+                                                <p className="mt-0.5 text-xs text-slate-400">{link.description}</p>
+                                            )}
+                                            <p className="mt-0.5 text-xs text-slate-400">{fmtDate(link.paid_at)}</p>
+                                        </div>
+                                        <p className="shrink-0 text-sm font-semibold text-brand-700">
+                                            {fmt(link.amount)}
+                                        </p>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
 
                     {/* ── Quick actions ─────────────────────────────────────── */}
@@ -351,46 +205,17 @@ export default function Dashboard({ stats }: PageProps<{ stats: DashboardStats }
                                 Import Patients
                             </Link>
                             <Link
-                                href={route('invoices.create')}
+                                href={route('clients.index')}
                                 className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-brand-700"
                             >
                                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                </svg>
-                                New Invoice
-                            </Link>
-                            <Link
-                                href={route('clients.index')}
-                                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                            >
-                                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
                                 All Patients
                             </Link>
-                            <Link
-                                href={route('invoices.index')}
-                                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                            >
-                                <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                All Invoices
-                            </Link>
-                            {stats.needs_action_count > 0 && (
-                                <Link
-                                    href={route('invoices.index', { status: 'overdue' })}
-                                    className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-100"
-                                >
-                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                            d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                    </svg>
-                                    {stats.needs_action_count} Overdue
-                                </Link>
-                            )}
                         </div>
                     </div>
+
                 </div>
             </div>
         </AuthenticatedLayout>

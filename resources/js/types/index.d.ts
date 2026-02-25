@@ -11,11 +11,15 @@ export type PageProps<
     auth: {
         user: User;
     };
+    flash: {
+        success?: string | null;
+        error?: string | null;
+    };
 };
 
-export type AccountStatus = 'active' | 'inactive' | 'pending';
-export type InvoiceStatus = 'unpaid' | 'pending' | 'paid' | 'overdue';
-export type SmsStatus     = 'sent' | 'failed';
+export type AccountStatus     = 'active' | 'inactive' | 'pending';
+export type PaymentStatus     = 'pending' | 'paid' | 'failed' | 'expired';
+export type PaymentSmsStatus  = 'not_sent' | 'sent' | 'failed';
 
 export interface PatientInsurance {
     id: number;
@@ -123,50 +127,49 @@ export interface Client {
     created_at: string;
     updated_at: string;
 
+    // Computed counts (present when loaded with withCount)
+    pending_links_count?: number;
+
     // Relations
-    invoices?: Invoice[];
+    payment_links?: PaymentLink[];
     patient_insurances?: PatientInsurance[];
     patient_authorizations?: PatientAuthorization[];
     encounters?: Encounter[];
+    client_payments?: ClientPayment[];
 }
 
-export interface Invoice {
+export interface ClientPayment {
     id: number;
     client_id: number;
-    client?: Client;
-    invoice_number: string;
-    service_date: string;
-    amount_due: number;
     amount_paid: number;
-    status: InvoiceStatus;
-    notes: string | null;
-    stripe_payment_link: string | null;
-    stripe_checkout_session_id: string | null;
+    stripe_session_id: string;
+    stripe_payment_link_id: string | null;
+    paid_at: string;
     created_at: string;
     updated_at: string;
-    sms_logs?: SmsLog[];
 }
 
-export interface SmsLog {
+export interface PaymentLink {
     id: number;
-    invoice_id: number;
-    sent_at: string;
-    status: SmsStatus;
-    message_sid: string | null;
-    error_message: string | null;
+    client_id: number;
+    stripe_payment_link_url: string | null;
+    stripe_payment_link_id: string | null;
+    amount: string;
+    description: string | null;
+    payment_status: PaymentStatus;
+    sms_status: PaymentSmsStatus;
+    sms_sent_at: string | null;
+    paid_at: string | null;
+    created_at: string;
+    client?: Client;
 }
 
 export interface DashboardStats {
     total_outstanding: number;
-    total_collected_this_month: number;
-    recent_payments: (Invoice & { client: Client })[];
-    needs_action_count: number;
-    // Extended stats
+    total_paid_this_month: number;
+    recent_paid: (PaymentLink & { client: Client })[];
+    pending_count: number;
     total_clients: number;
-    total_invoices: number;
-    overdue_amount: number;
-    status_counts: Partial<Record<InvoiceStatus, number>>;
-    needs_action_invoices: (Invoice & { client: Client })[];
 }
 
 export interface PaginationLink {

@@ -1,7 +1,8 @@
+import Modal from '@/Components/Modal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { AccountStatus, Client, PageProps, PaginatedData } from '@/types';
-import { Head, Link, useForm, router } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import { Head, Link, useForm, router, usePage } from '@inertiajs/react';
+import { useEffect, useRef, useState } from 'react';
 
 const statusColors: Record<AccountStatus, string> = {
     active:   'bg-brand-50 text-brand-700 border border-brand-200',
@@ -39,15 +40,127 @@ function formatBalance(amount: number): string {
     return `$${Number(amount).toFixed(2)}`;
 }
 
+interface GeneratingStatus {
+    total: number;
+    processed: number;
+    started_at: string;
+}
+
 export default function Index({
     clients,
     filters,
-}: PageProps<{ clients: PaginatedData<Client>; filters: Filters }>) {
+    generating,
+}: PageProps<{ clients: PaginatedData<Client>; filters: Filters; generating: GeneratingStatus | null }>) {
+    const { flash } = usePage<PageProps>().props;
     const { delete: destroy, processing } = useForm({});
     const [search, setSearch] = useState(filters.search ?? '');
     const [status, setStatus] = useState(filters.status ?? '');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
+    // ── Batch selection ───────────────────────────────────────────────────────
+    const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    const allPageIds = clients.data.map((c) => c.id);
+    const allSelected = allPageIds.length > 0 && allPageIds.every((id) => selectedIds.has(id));
+
+    function toggleAll() {
+        if (allSelected) {
+            setSelectedIds((prev) => {
+                const next = new Set(prev);
+                allPageIds.forEach((id) => next.delete(id));
+                return next;
+            });
+        } else {
+            setSelectedIds((prev) => {
+                const next = new Set(prev);
+                allPageIds.forEach((id) => next.add(id));
+                return next;
+            });
+        }
+    }
+
+    function toggleOne(id: number) {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    }
+
+    // ── Poll while generation job is running ──────────────────────────────────
+    const isGenerating = !!generating;
+    useEffect(() => {
+        if (!isGenerating) return;
+        const id = setInterval(() => {
+            router.reload({ only: ['generating', 'clients'] });
+        }, 3000);
+        return () => clearInterval(id);
+    }, [isGenerating]);
+
+    // ── Generate all payment links ────────────────────────────────────────────
+    const [generatingAll, setGeneratingAll] = useState(false);
+
+    function handleGenerateAll() {
+        if (!confirm('Generate payment links for all eligible clients without a pending link?')) return;
+        setGeneratingAll(true);
+        router.post(
+            route('clients.generate-all-payment-links'),
+            {},
+            { onFinish: () => setGeneratingAll(false) },
+        );
+    }
+
+    // ── Batch SMS ─────────────────────────────────────────────────────────────
+    const [batchSending, setBatchSending] = useState(false);
+
+    function handleBatchSendSms() {
+        if (selectedIds.size === 0) return;
+        setBatchSending(true);
+        router.post(
+            route('clients.batch-send-sms'),
+            { client_ids: [...selectedIds] },
+            {
+                onFinish: () => {
+                    setBatchSending(false);
+                    setSelectedIds(new Set());
+                },
+            },
+        );
+    }
+
+    // ── Alternate-phone modal ─────────────────────────────────────────────────
+    const [altModal, setAltModal] = useState<{ open: boolean; client: Client | null }>({
+        open: false,
+        client: null,
+    });
+    const [altPhone, setAltPhone] = useState('');
+    const [altSending, setAltSending] = useState(false);
+
+    function openAltModal(client: Client) {
+        setAltModal({ open: true, client });
+        setAltPhone('');
+    }
+
+    function closeAltModal() {
+        setAltModal({ open: false, client: null });
+        setAltPhone('');
+    }
+
+    function handleSendToPhone() {
+        if (!altModal.client || !altPhone.trim()) return;
+        setAltSending(true);
+        router.post(
+            route('clients.send-to-phone', altModal.client.id),
+            { phone: altPhone.trim() },
+            {
+                onFinish: () => {
+                    setAltSending(false);
+                    closeAltModal();
+                },
+            },
+        );
+    }
+
+    // ── Filters ───────────────────────────────────────────────────────────────
     function applyFilters(newSearch: string, newStatus: string) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
@@ -88,6 +201,17 @@ export default function Index({
                         </p>
                     </div>
                     <div className="flex gap-2">
+                        <button
+                            onClick={handleGenerateAll}
+                            disabled={generatingAll}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+                        >
+                            <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                            {generatingAll ? 'Queuing…' : 'Generate All Links'}
+                        </button>
                         <Link
                             href={route('clients.import')}
                             className="inline-flex items-center rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-600 shadow-sm transition hover:bg-slate-50"
@@ -108,6 +232,68 @@ export default function Index({
 
             <div className="py-8">
                 <div className="mx-auto max-w-7xl sm:px-6 lg:px-8 space-y-4">
+
+                    {/* Generation progress banner */}
+                    {generating && (() => {
+                        const pct = generating.total > 0
+                            ? Math.min(100, Math.round((generating.processed / generating.total) * 100))
+                            : 0;
+                        return (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3.5">
+                                <div className="flex items-start gap-3">
+                                    <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-500"
+                                        fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10"
+                                            stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor"
+                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-sm font-medium text-amber-800">
+                                                Generating payment links…
+                                            </p>
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                <span className="text-sm font-semibold text-amber-700">
+                                                    {pct}%
+                                                </span>
+                                                <Link
+                                                    href={route('clients.cancel-payment-link-generation')}
+                                                    method="post"
+                                                    as="button"
+                                                    className="rounded-md border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:bg-amber-200"
+                                                >
+                                                    Stop
+                                                </Link>
+                                            </div>
+                                        </div>
+                                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-amber-200">
+                                            <div
+                                                className="h-full rounded-full bg-amber-500 transition-all duration-500"
+                                                style={{ width: `${pct}%` }}
+                                            />
+                                        </div>
+                                        <p className="mt-1.5 text-xs text-amber-600">
+                                            {generating.processed} of {generating.total} {generating.total === 1 ? 'client' : 'clients'} processed
+                                            &nbsp;·&nbsp; refreshing automatically
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Flash messages */}
+                    {flash.success && (
+                        <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700">
+                            {flash.success}
+                        </div>
+                    )}
+                    {flash.error && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                            {flash.error}
+                        </div>
+                    )}
 
                     {/* Search + Filter bar */}
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -137,6 +323,32 @@ export default function Index({
                         </select>
                     </div>
 
+                    {/* Batch action toolbar */}
+                    {selectedIds.size > 0 && (
+                        <div className="flex items-center gap-3 rounded-lg border border-brand-200 bg-brand-50 px-4 py-2.5">
+                            <span className="text-sm font-medium text-brand-700">
+                                {selectedIds.size} {selectedIds.size === 1 ? 'client' : 'clients'} selected
+                            </span>
+                            <button
+                                onClick={handleBatchSendSms}
+                                disabled={batchSending}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-50"
+                            >
+                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                                </svg>
+                                {batchSending ? 'Queuing…' : 'Send Payment Links via SMS'}
+                            </button>
+                            <button
+                                onClick={() => setSelectedIds(new Set())}
+                                className="ml-auto text-xs text-brand-500 hover:text-brand-700"
+                            >
+                                Clear
+                            </button>
+                        </div>
+                    )}
+
                     {/* Table */}
                     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                         {clients.data.length === 0 ? (
@@ -157,6 +369,14 @@ export default function Index({
                                 <table className="min-w-full divide-y divide-slate-200">
                                     <thead className="bg-slate-50">
                                         <tr>
+                                            <th className="w-10 px-4 py-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={allSelected}
+                                                    onChange={toggleAll}
+                                                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                                />
+                                            </th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">DOB</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Contact</th>
@@ -169,8 +389,19 @@ export default function Index({
                                     <tbody className="divide-y divide-slate-100 bg-white">
                                         {clients.data.map((client) => {
                                             const balance = Number(client.patient_balance) || Number(client.outstanding_balance);
+                                            const isSelected = selectedIds.has(client.id);
                                             return (
-                                                <tr key={client.id} className="hover:bg-slate-50 transition-colors">
+                                                <tr key={client.id} className={`transition-colors ${isSelected ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}>
+                                                    {/* Checkbox */}
+                                                    <td className="w-10 px-4 py-3.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleOne(client.id)}
+                                                            className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                                                        />
+                                                    </td>
+
                                                     {/* Patient */}
                                                     <td className="px-5 py-3.5">
                                                         <Link
@@ -233,6 +464,15 @@ export default function Index({
                                                         <span className={balance > 0 ? 'font-semibold text-red-600' : 'text-slate-400'}>
                                                             {formatBalance(balance)}
                                                         </span>
+                                                        {(client.pending_links_count ?? 0) > 0 && (
+                                                            <span className="mt-1 flex items-center gap-1 text-xs font-medium text-brand-700">
+                                                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                                        d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                </svg>
+                                                                {client.pending_links_count} pending {(client.pending_links_count ?? 0) === 1 ? 'link' : 'links'}
+                                                            </span>
+                                                        )}
                                                     </td>
 
                                                     {/* Status */}
@@ -249,6 +489,13 @@ export default function Index({
                                                                   className="text-slate-400 hover:text-brand-700">View</Link>
                                                             <Link href={route('clients.edit', client.id)}
                                                                   className="text-slate-400 hover:text-brand-700">Edit</Link>
+                                                            <button
+                                                                onClick={() => openAltModal(client)}
+                                                                className="text-slate-400 hover:text-brand-700"
+                                                                title="Send payment link to alternate number"
+                                                            >
+                                                                SMS
+                                                            </button>
                                                             <button
                                                                 onClick={() => handleDelete(client)}
                                                                 disabled={processing}
@@ -293,6 +540,55 @@ export default function Index({
                     )}
                 </div>
             </div>
+
+            {/* Alternate-phone modal */}
+            <Modal show={altModal.open} maxWidth="sm" onClose={closeAltModal}>
+                <div className="p-6">
+                    <h3 className="text-base font-semibold text-slate-900">Send Payment Link via SMS</h3>
+                    {altModal.client && (
+                        <p className="mt-1 text-sm text-slate-500">
+                            Send <span className="font-medium text-slate-700">{displayName(altModal.client)}</span>'s
+                            payment link to a different phone number.
+                        </p>
+                    )}
+
+                    <div className="mt-4">
+                        <label className="block text-xs font-medium text-slate-700 mb-1">
+                            Phone number
+                        </label>
+                        <input
+                            type="tel"
+                            placeholder="(555) 000-0000"
+                            value={altPhone}
+                            onChange={(e) => setAltPhone(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSendToPhone()}
+                            autoFocus
+                            className="block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                        />
+                        <p className="mt-1 text-xs text-slate-400">
+                            This will not change the client's stored phone number.
+                        </p>
+                    </div>
+
+                    <div className="mt-5 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={closeAltModal}
+                            className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSendToPhone}
+                            disabled={altSending || !altPhone.trim()}
+                            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                            {altSending ? 'Sending…' : 'Send SMS'}
+                        </button>
+                    </div>
+                </div>
+            </Modal>
         </AuthenticatedLayout>
     );
 }

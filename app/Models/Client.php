@@ -65,6 +65,10 @@ class Client extends Model
         'patient_payments',
         'insurance_balance',
         'patient_balance',
+
+        // Stripe payment link
+        'payment_link',
+        'stripe_payment_link_id',
     ];
 
     protected function casts(): array
@@ -81,9 +85,9 @@ class Client extends Model
         ];
     }
 
-    public function invoices(): HasMany
+    public function paymentLinks(): HasMany
     {
-        return $this->hasMany(Invoice::class);
+        return $this->hasMany(PaymentLink::class)->latest();
     }
 
     public function patientInsurances(): HasMany
@@ -99,5 +103,10 @@ class Client extends Model
     public function encounters(): HasMany
     {
         return $this->hasMany(Encounter::class);
+    }
+
+    public function clientPayments(): HasMany
+    {
+        return $this->hasMany(ClientPayment::class)->orderByDesc('paid_at');
     }
 }

@@ -46,10 +46,10 @@ export default function Authenticated({
                                     Import
                                 </NavLink>
                                 <NavLink
-                                    href={route('invoices.index')}
-                                    active={route().current('invoices.*')}
+                                    href={route('payment-links.index')}
+                                    active={route().current('payment-links.index')}
                                 >
-                                    Invoices
+                                    Payment Links
                                 </NavLink>
                             </div>
                         </div>
@@ -168,10 +168,10 @@ export default function Authenticated({
                             Import
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
-                            href={route('invoices.index')}
-                            active={route().current('invoices.*')}
+                            href={route('payment-links.index')}
+                            active={route().current('payment-links.index')}
                         >
-                            Invoices
+                            Payment Links
                         </ResponsiveNavLink>
                     </div>
 

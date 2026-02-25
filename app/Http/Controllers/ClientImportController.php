@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Imports\ClientImport;
+use App\Jobs\GenerateClientPaymentLinksJob;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -30,6 +31,10 @@ class ClientImportController extends Controller
         $import = new ClientImport();
 
         Excel::import($import, $request->file('file'));
+
+        if ($import->createdIds) {
+            GenerateClientPaymentLinksJob::dispatch($import->createdIds);
+        }
 
         return redirect()->route('clients.import')
             ->with('importResult', [
