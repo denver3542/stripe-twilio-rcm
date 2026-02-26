@@ -29,6 +29,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('clients/import', [ClientImportController::class, 'show'])->name('clients.import');
     Route::post('clients/import', [ClientImportController::class, 'store'])->name('clients.import.store');
+    Route::get('clients/generation-progress', [ClientImportController::class, 'generationProgress'])->name('clients.generation-progress');
     Route::post('clients/batch-send-sms', [ClientController::class, 'batchSendSms'])->name('clients.batch-send-sms');
     Route::post('clients/generate-all-payment-links', [ClientController::class, 'generateAllPaymentLinks'])->name('clients.generate-all-payment-links');
     Route::post('clients/cancel-payment-link-generation', [ClientController::class, 'cancelPaymentLinkGeneration'])->name('clients.cancel-payment-link-generation');

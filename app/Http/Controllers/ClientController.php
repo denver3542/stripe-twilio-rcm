@@ -50,14 +50,7 @@ class ClientController extends Controller
         return Inertia::render('Clients/Index', [
             'clients'    => $query->withCount(['paymentLinks as pending_links_count' => fn ($q) => $q->where('payment_status', 'pending')])->paginate(20)->withQueryString(),
             'filters'    => $request->only(['search', 'status']),
-            'generating' => ($gen = Cache::get('payment_links_generating'))
-                ? array_merge($gen, [
-                    'processed' => min(
-                        PaymentLink::where('created_at', '>=', \Carbon\Carbon::parse($gen['started_at']))->count(),
-                        $gen['total']
-                    ),
-                ])
-                : null,
+            'generating' => Cache::get('payment_links_generating'),
         ]);
     }
 
@@ -125,13 +118,16 @@ class ClientController extends Controller
             return redirect()->back()->with('success', 'All eligible clients already have pending payment links.');
         }
 
-        GenerateClientPaymentLinksJob::dispatch($clientIds);
-
         $count = count($clientIds);
+
+        // Set initial progress so the UI can show it immediately
         Cache::put('payment_links_generating', [
             'total'      => $count,
+            'processed'  => 0,
             'started_at' => now()->toISOString(),
-        ], 600); // 10-minute safety TTL
+        ], 3600);
+
+        GenerateClientPaymentLinksJob::dispatch($clientIds);
         return redirect()->back()->with(
             'success',
             "Queued payment link generation for {$count} " . ($count === 1 ? 'client' : 'clients') . '.'

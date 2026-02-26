@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Imports\ClientImport;
 use App\Jobs\GenerateClientPaymentLinksJob;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 use Maatwebsite\Excel\Facades\Excel;
@@ -16,6 +18,7 @@ class ClientImportController extends Controller
     {
         return Inertia::render('Clients/Import', [
             'importResult' => session('importResult'),
+            'generating'   => Cache::get('payment_links_generating'),
         ]);
     }
 
@@ -33,6 +36,15 @@ class ClientImportController extends Controller
         Excel::import($import, $request->file('file'));
 
         if ($import->createdIds) {
+            $count = count($import->createdIds);
+
+            // Set progress cache so both Import and Index pages can track it
+            Cache::put('payment_links_generating', [
+                'total'      => $count,
+                'processed'  => 0,
+                'started_at' => now()->toISOString(),
+            ], 3600);
+
             GenerateClientPaymentLinksJob::dispatch($import->createdIds);
         }
 
@@ -43,5 +55,17 @@ class ClientImportController extends Controller
                 'failed'  => $import->failed,
                 'errors'  => array_slice($import->errors, 0, 20), // cap at 20 shown
             ]);
+    }
+
+    /**
+     * API endpoint for polling payment link generation progress.
+     */
+    public function generationProgress(): JsonResponse
+    {
+        $progress = Cache::get('payment_links_generating');
+
+        return response()->json([
+            'generating' => $progress,
+        ]);
     }
 }
