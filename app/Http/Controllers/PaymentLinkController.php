@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\PaymentLink\StorePaymentLinkRequest;
 use App\Jobs\BatchSendPaymentLinkSmsJob;
+use App\Jobs\FetchAllPaymentStatusesJob;
 use App\Models\Client;
 use App\Models\PaymentLink;
 use App\Services\PaymentLinkService;
@@ -89,6 +90,43 @@ class PaymentLinkController extends Controller
         BatchSendPaymentLinkSmsJob::dispatch($request->link_ids);
 
         return redirect()->back()->with('success', "Queued SMS for up to {$eligible} payment links.");
+    }
+
+    public function fetchStatus(PaymentLink $paymentLink): RedirectResponse
+    {
+        try {
+            $result = $this->paymentLinkService->fetchStatus($paymentLink);
+
+            $message = match ($result['status']) {
+                'paid'    => 'Payment confirmed — marked as paid.',
+                'expired' => 'Payment link has expired.',
+                'pending' => 'No payment found yet — still pending.',
+                'skipped' => 'Skipped: no Stripe link ID.',
+                default   => $result['message'],
+            };
+
+            $flashKey = in_array($result['status'], ['paid', 'expired']) ? 'success' : 'info';
+
+            return redirect()->back()->with($flashKey, $message);
+        } catch (\Throwable $e) {
+            Log::error("fetchStatus controller error for link #{$paymentLink->id}: " . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to fetch status from Stripe.');
+        }
+    }
+
+    public function fetchAllStatuses(): RedirectResponse
+    {
+        $pending = PaymentLink::where('payment_status', 'pending')
+            ->whereNotNull('stripe_payment_link_id')
+            ->count();
+
+        if ($pending === 0) {
+            return redirect()->back()->with('info', 'No pending payment links to check.');
+        }
+
+        FetchAllPaymentStatusesJob::dispatch();
+
+        return redirect()->back()->with('success', "Queued status check for {$pending} pending payment links. Refresh in a moment.");
     }
 
     public function destroy(PaymentLink $paymentLink): RedirectResponse

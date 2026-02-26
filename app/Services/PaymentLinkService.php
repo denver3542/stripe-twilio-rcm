@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Client;
+use App\Models\ClientPayment;
 use App\Models\PaymentLink;
 use App\Repositories\Contracts\PaymentLinkRepositoryInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -73,6 +75,88 @@ class PaymentLinkService
         if ($result['status'] !== 'sent') {
             Log::warning("SMS failed for PaymentLink #{$link->id}: " . ($result['error'] ?? 'unknown error'));
         }
+    }
+
+    /**
+     * Query Stripe for the real-time status of a payment link and sync it locally.
+     *
+     * Returns an array with 'status' (paid|expired|pending|skipped|error) and 'message'.
+     */
+    public function fetchStatus(PaymentLink $link): array
+    {
+        if (! $link->stripe_payment_link_id) {
+            return ['status' => 'skipped', 'message' => 'No Stripe payment link ID.'];
+        }
+
+        if ($link->payment_status === 'paid') {
+            return ['status' => 'paid', 'message' => 'Already marked as paid.'];
+        }
+
+        try {
+            $sessions = $this->stripe->getCheckoutSessionsForPaymentLink($link->stripe_payment_link_id);
+        } catch (\Throwable $e) {
+            Log::error("fetchStatus: Stripe API error for link #{$link->id}: " . $e->getMessage());
+            return ['status' => 'error', 'message' => 'Stripe API error: ' . $e->getMessage()];
+        }
+
+        foreach ($sessions as $session) {
+            if ($session->payment_status === 'paid') {
+                $this->paymentLinks->update($link, [
+                    'payment_status' => 'paid',
+                    'paid_at'        => Carbon::now(),
+                ]);
+
+                $this->maybeRecordClientPayment($link, $session);
+
+                return ['status' => 'paid', 'message' => 'Payment confirmed and marked as paid.'];
+            }
+        }
+
+        // If any session has status=expired and no paid session was found
+        foreach ($sessions as $session) {
+            if ($session->status === 'expired') {
+                $this->paymentLinks->update($link, ['payment_status' => 'expired']);
+                return ['status' => 'expired', 'message' => 'Payment link has expired.'];
+            }
+        }
+
+        return ['status' => 'pending', 'message' => 'No completed payment found.'];
+    }
+
+    private function maybeRecordClientPayment(PaymentLink $link, object $session): void
+    {
+        // Guard against duplicate records
+        if (ClientPayment::where('stripe_session_id', $session->id)->exists()) {
+            return;
+        }
+
+        $client = $link->client;
+        if (! $client) {
+            return;
+        }
+
+        $amountPaid = $session->amount_total / 100;
+        $paidAt     = Carbon::createFromTimestamp($session->created);
+
+        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt) {
+            ClientPayment::create([
+                'client_id'              => $client->id,
+                'amount_paid'            => $amountPaid,
+                'stripe_session_id'      => $session->id,
+                'stripe_payment_link_id' => $session->payment_link ?? null,
+                'paid_at'                => $paidAt,
+            ]);
+
+            $patientBal = (float) $client->patient_balance;
+            if ($patientBal > 0) {
+                $client->update(['patient_balance' => max(0, $patientBal - $amountPaid)]);
+            } else {
+                $outstandingBal = (float) $client->outstanding_balance;
+                $client->update(['outstanding_balance' => max(0, $outstandingBal - $amountPaid)]);
+            }
+
+            Log::info("fetchStatus: recorded payment for client #{$client->id}", ['amount' => $amountPaid]);
+        });
     }
 
     public function destroy(PaymentLink $link): bool

@@ -37,10 +37,12 @@ Route::middleware('auth')->group(function () {
 
     Route::get('payment-links', [PaymentLinkController::class, 'index'])->name('payment-links.index');
     Route::post('payment-links/batch-send-sms', [PaymentLinkController::class, 'batchSendSms'])->name('payment-links.batch-send-sms');
+    Route::post('payment-links/fetch-all-statuses', [PaymentLinkController::class, 'fetchAllStatuses'])->name('payment-links.fetch-all-statuses');
     Route::post('clients/{client}/payment-links', [PaymentLinkController::class, 'store'])
         ->name('payment-links.store');
     Route::post('payment-links/{paymentLink}/send-sms', [PaymentLinkController::class, 'sendSms'])
         ->name('payment-links.send-sms');
+    Route::post('payment-links/{paymentLink}/fetch-status', [PaymentLinkController::class, 'fetchStatus'])->name('payment-links.fetch-status');
     Route::delete('payment-links/{paymentLink}', [PaymentLinkController::class, 'destroy'])
         ->name('payment-links.destroy');
 });

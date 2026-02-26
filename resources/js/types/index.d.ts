@@ -153,6 +153,7 @@ export interface PaymentLink {
     id: number;
     client_id: number;
     stripe_payment_link_url: string | null;
+    short_url: string | null;
     stripe_payment_link_id: string | null;
     amount: string;
     description: string | null;

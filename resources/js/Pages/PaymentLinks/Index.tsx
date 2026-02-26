@@ -3,6 +3,16 @@ import { Client, PageProps, PaginatedData, PaymentLink, PaymentSmsStatus, Paymen
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useRef, useState } from 'react';
 
+// ─── Spinner icon ─────────────────────────────────────────────────────────────
+function Spinner({ className = 'h-3.5 w-3.5' }: { className?: string }) {
+    return (
+        <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+        </svg>
+    );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmt(amount: number | string): string {
@@ -85,6 +95,10 @@ export default function PaymentLinksIndex({
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [sending, setSending] = useState(false);
 
+    // Fetch status state
+    const [fetchingId, setFetchingId] = useState<number | null>(null);
+    const [fetchingAll, setFetchingAll] = useState(false);
+
     const totalBatches = Math.ceil(unsent_count / BATCH_SIZE);
 
     // ─── Filter handlers ───────────────────────────────────────────────────────
@@ -155,6 +169,30 @@ export default function PaymentLinksIndex({
         });
     }
 
+    function handleFetchStatus(link: PaymentLinkWithClient) {
+        setFetchingId(link.id);
+        router.post(
+            route('payment-links.fetch-status', link.id),
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setFetchingId(null),
+            },
+        );
+    }
+
+    function handleFetchAllStatuses() {
+        setFetchingAll(true);
+        router.post(
+            route('payment-links.fetch-all-statuses'),
+            {},
+            {
+                preserveScroll: true,
+                onFinish: () => setFetchingAll(false),
+            },
+        );
+    }
+
     function handleBatchSend() {
         if (selectedIds.size === 0) return;
         setSending(true);
@@ -192,6 +230,21 @@ export default function PaymentLinksIndex({
                             {filters.search || filters.status ? ' matching filters' : ' total'}
                         </p>
                     </div>
+                    <button
+                        type="button"
+                        onClick={handleFetchAllStatuses}
+                        disabled={fetchingAll}
+                        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        title="Query Stripe for the latest status of all pending payment links"
+                    >
+                        {fetchingAll ? <Spinner /> : (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        )}
+                        Fetch All Statuses
+                    </button>
                 </div>
             }
         >
@@ -209,6 +262,11 @@ export default function PaymentLinksIndex({
                     {flash.error && (
                         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                             {flash.error}
+                        </div>
+                    )}
+                    {(flash as Record<string, string>).info && (
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                            {(flash as Record<string, string>).info}
                         </div>
                     )}
 
@@ -444,6 +502,25 @@ export default function PaymentLinksIndex({
                                                                 >
                                                                     Open ↗
                                                                 </a>
+                                                            )}
+                                                            {link.payment_status === 'pending' && (
+                                                                <button
+                                                                    onClick={() => handleFetchStatus(link)}
+                                                                    disabled={fetchingId === link.id}
+                                                                    title="Query Stripe for latest payment status"
+                                                                    className="flex items-center gap-1 text-slate-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                >
+                                                                    {fetchingId === link.id
+                                                                        ? <Spinner />
+                                                                        : (
+                                                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                                                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                                            </svg>
+                                                                        )
+                                                                    }
+                                                                    {fetchingId === link.id ? 'Checking…' : 'Fetch Status'}
+                                                                </button>
                                                             )}
                                                             {link.payment_status === 'pending' &&
                                                              link.sms_status !== 'sent' && (

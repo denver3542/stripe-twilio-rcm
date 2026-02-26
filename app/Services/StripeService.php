@@ -38,6 +38,19 @@ class StripeService
     }
 
     /**
+     * List checkout sessions associated with a Stripe Payment Link.
+     *
+     * @return \Stripe\Checkout\Session[]
+     */
+    public function getCheckoutSessionsForPaymentLink(string $stripePaymentLinkId): array
+    {
+        return $this->stripe->checkout->sessions->all([
+            'payment_link' => $stripePaymentLinkId,
+            'limit'        => 5,
+        ])->data;
+    }
+
+    /**
      * @throws SignatureVerificationException
      */
     public function constructWebhookEvent(string $payload, string $signature): Event
