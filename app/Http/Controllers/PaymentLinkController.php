@@ -10,6 +10,7 @@ use App\Models\PaymentLink;
 use App\Services\PaymentLinkService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -28,6 +29,10 @@ class PaymentLinkController extends Controller
             $query->where('payment_status', $status);
         }
 
+        if ($smsStatus = $request->input('sms_status')) {
+            $query->where('sms_status', $smsStatus);
+        }
+
         if ($search = trim((string) $request->input('search'))) {
             $query->whereHas('client', function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -42,10 +47,11 @@ class PaymentLinkController extends Controller
             ->orderBy('id')->limit(160)->pluck('id')->toArray();
 
         return Inertia::render('PaymentLinks/Index', [
-            'links'         => $query->paginate(25)->withQueryString(),
-            'filters'       => $request->only(['status', 'search']),
-            'unsent_count'  => $unsentCount,
+            'links'          => $query->paginate(25)->withQueryString(),
+            'filters'        => $request->only(['status', 'sms_status', 'search']),
+            'unsent_count'   => $unsentCount,
             'next_batch_ids' => $nextBatchIds,
+            'sending'        => Cache::get('batch_sms_sending'),
         ]);
     }
 

@@ -17,7 +17,7 @@ export type PageProps<
     };
 };
 
-export type AccountStatus     = 'active' | 'inactive' | 'pending';
+export type AccountStatus     = 'active' | 'inactive' | 'pending' | 'paid';
 export type PaymentStatus     = 'pending' | 'paid' | 'failed' | 'expired';
 export type PaymentSmsStatus  = 'not_sent' | 'sent' | 'failed';
 

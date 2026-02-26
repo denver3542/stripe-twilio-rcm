@@ -21,7 +21,7 @@ class UpdateClientRequest extends FormRequest
             'email'               => ['required', 'email', 'max:255', Rule::unique('clients')->ignore($this->route('client'))],
             'outstanding_balance' => ['nullable', 'numeric', 'min:0'],
             'insurance_info'      => ['nullable', 'string'],
-            'account_status'      => ['required', 'in:active,inactive,pending'],
+            'account_status'      => ['required', 'in:active,inactive,pending,paid'],
         ];
     }
 }

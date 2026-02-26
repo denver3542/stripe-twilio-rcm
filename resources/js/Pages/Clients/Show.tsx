@@ -12,6 +12,7 @@ const accountStatusColors: Record<AccountStatus, string> = {
     active:   'bg-brand-50 text-brand-700 border border-brand-200',
     inactive: 'bg-red-50 text-red-700 border border-red-200',
     pending:  'bg-amber-50 text-amber-700 border border-amber-200',
+    paid:     'bg-teal-50 text-teal-700 border border-teal-200',
 };
 
 const paymentStatusColors: Record<PaymentStatus, string> = {
@@ -148,6 +149,8 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
     const { delete: destroy, processing } = useForm({});
     const [tab, setTab] = useState<Tab>('overview');
     const [showGenerateModal, setShowGenerateModal] = useState(false);
+    const [linkPaymentFilter, setLinkPaymentFilter] = useState<PaymentStatus | 'all'>('all');
+    const [linkSmsFilter, setLinkSmsFilter] = useState<PaymentSmsStatus | 'all'>('all');
 
     const insurances     = client.patient_insurances     ?? [];
     const authorizations = client.patient_authorizations ?? [];
@@ -157,6 +160,12 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
     const hasImportedData = !!client.external_patient_id;
 
     const totalPaid = payments.reduce((sum, p) => sum + Number(p.amount_paid), 0);
+
+    const filteredLinks = paymentLinks.filter((l) => {
+        if (linkPaymentFilter !== 'all' && l.payment_status !== linkPaymentFilter) return false;
+        if (linkSmsFilter    !== 'all' && l.sms_status      !== linkSmsFilter)    return false;
+        return true;
+    });
 
     // Default amount for new link = patient_balance if > 0, else outstanding_balance
     const defaultAmount = Number(client.patient_balance) > 0
@@ -204,7 +213,7 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                         </div>
                         <h2 className="mt-0.5 text-xl font-semibold leading-tight text-slate-900">{displayName(client)}</h2>
                         <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${accountStatusColors[client.account_status]}`}>
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${accountStatusColors[client.account_status]}`}>
                                 {client.account_status}
                             </span>
                             {client.external_patient_id && <span className="text-xs text-slate-400">ID #{client.external_patient_id}</span>}
@@ -410,19 +419,74 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                             {/* Payment Links */}
                             {tab === 'payment-links' && (
                                 <div>
-                                    <div className="mb-4 flex items-center justify-between">
-                                        <p className="text-sm text-slate-500">
-                                            {paymentLinks.length} payment link{paymentLinks.length !== 1 ? 's' : ''}
-                                        </p>
-                                        <button
-                                            onClick={() => setShowGenerateModal(true)}
-                                            className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition hover:bg-brand-700"
-                                        >
-                                            + Generate New Link
-                                        </button>
+                                    {/* Toolbar */}
+                                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                        {/* Filters */}
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {/* Payment status pills */}
+                                            {(['all', 'pending', 'paid', 'failed', 'expired'] as const).map((s) => (
+                                                <button
+                                                    key={s}
+                                                    type="button"
+                                                    onClick={() => setLinkPaymentFilter(s)}
+                                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                                        linkPaymentFilter === s
+                                                            ? 'bg-brand-600 text-white shadow-sm'
+                                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                                    }`}
+                                                >
+                                                    {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                                                    {s !== 'all' && (
+                                                        <span className="ml-1 opacity-70">
+                                                            ({paymentLinks.filter((l) => l.payment_status === s).length})
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            ))}
+
+                                            <span className="text-slate-200">|</span>
+
+                                            {/* SMS status select */}
+                                            <select
+                                                value={linkSmsFilter}
+                                                onChange={(e) => setLinkSmsFilter(e.target.value as PaymentSmsStatus | 'all')}
+                                                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                                            >
+                                                <option value="all">All SMS</option>
+                                                <option value="not_sent">Not Sent</option>
+                                                <option value="sent">Sent</option>
+                                                <option value="failed">SMS Failed</option>
+                                            </select>
+
+                                            {(linkPaymentFilter !== 'all' || linkSmsFilter !== 'all') && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setLinkPaymentFilter('all'); setLinkSmsFilter('all'); }}
+                                                    className="text-xs text-slate-400 hover:text-slate-600"
+                                                >
+                                                    Clear filters
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Count + action */}
+                                        <div className="flex items-center gap-3">
+                                            <p className="text-xs text-slate-400">
+                                                {filteredLinks.length} of {paymentLinks.length}
+                                            </p>
+                                            <button
+                                                onClick={() => setShowGenerateModal(true)}
+                                                className="inline-flex items-center rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm transition hover:bg-brand-700"
+                                            >
+                                                + Generate New Link
+                                            </button>
+                                        </div>
                                     </div>
+
                                     {paymentLinks.length === 0 ? (
                                         <p className="py-8 text-center text-sm text-slate-400">No payment links yet. Generate one above.</p>
+                                    ) : filteredLinks.length === 0 ? (
+                                        <p className="py-8 text-center text-sm text-slate-400">No payment links match the selected filters.</p>
                                     ) : (
                                         <div className="overflow-x-auto -mx-6 px-6">
                                             <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -438,7 +502,7 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-slate-50">
-                                                    {paymentLinks.map((link: PaymentLink) => (
+                                                    {filteredLinks.map((link: PaymentLink) => (
                                                         <tr key={link.id} className="hover:bg-slate-50">
                                                             <td className="whitespace-nowrap py-2.5 pr-4 font-semibold text-slate-900">
                                                                 {fmt(link.amount)}
@@ -465,9 +529,9 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                                                         href={link.stripe_payment_link_url}
                                                                         target="_blank"
                                                                         rel="noreferrer"
-                                                                        className="text-xs text-stripe-600 hover:underline"
+                                                                        className="inline-flex items-center gap-1 rounded-md bg-stripe px-2.5 py-1 text-xs font-medium text-white transition hover:opacity-90"
                                                                     >
-                                                                        Open ↗
+                                                                        Click here →
                                                                     </a>
                                                                 ) : <span className="text-slate-300">—</span>}
                                                             </td>

@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Client, PageProps, PaginatedData, PaymentLink, PaymentSmsStatus, PaymentStatus } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // ─── Spinner icon ─────────────────────────────────────────────────────────────
 function Spinner({ className = 'h-3.5 w-3.5' }: { className?: string }) {
@@ -65,7 +65,14 @@ const smsStatusLabels: Record<PaymentSmsStatus, string> = {
 
 interface Filters {
     status?: string;
+    sms_status?: string;
     search?: string;
+}
+
+interface SendingStatus {
+    total: number;
+    processed: number;
+    started_at: string;
 }
 
 type PaymentLinkWithClient = PaymentLink & { client: Client };
@@ -79,21 +86,24 @@ export default function PaymentLinksIndex({
     filters,
     unsent_count,
     next_batch_ids,
+    sending,
 }: PageProps<{
     links: PaginatedData<PaymentLinkWithClient>;
     filters: Filters;
     unsent_count: number;
     next_batch_ids: number[];
+    sending: SendingStatus | null;
 }>) {
     const { flash } = usePage<PageProps>().props;
 
     const [status, setStatus] = useState(filters.status ?? '');
+    const [smsStatus, setSmsStatus] = useState(filters.sms_status ?? '');
     const [search, setSearch] = useState(filters.search ?? '');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // Batch selection state
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-    const [sending, setSending] = useState(false);
+    const [isSending, setIsSending] = useState(false);
 
     // Fetch status state
     const [fetchingId, setFetchingId] = useState<number | null>(null);
@@ -101,14 +111,28 @@ export default function PaymentLinksIndex({
 
     const totalBatches = Math.ceil(unsent_count / BATCH_SIZE);
 
+    // ─── Poll while batch SMS job is running ───────────────────────────────────
+    const isSendingBatch = !!sending;
+    useEffect(() => {
+        if (!isSendingBatch) return;
+        const id = setInterval(() => {
+            router.reload({ only: ['sending', 'links', 'unsent_count', 'next_batch_ids'] });
+        }, 3000);
+        return () => clearInterval(id);
+    }, [isSendingBatch]);
+
     // ─── Filter handlers ───────────────────────────────────────────────────────
 
-    function applyFilters(newSearch: string, newStatus: string) {
+    function applyFilters(newSearch: string, newStatus: string, newSmsStatus: string) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
             router.get(
                 route('payment-links.index'),
-                { search: newSearch || undefined, status: newStatus || undefined },
+                {
+                    search:     newSearch     || undefined,
+                    status:     newStatus     || undefined,
+                    sms_status: newSmsStatus  || undefined,
+                },
                 { preserveState: true, replace: true },
             );
         }, 300);
@@ -116,13 +140,20 @@ export default function PaymentLinksIndex({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status);
+        applyFilters(value, status, smsStatus);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value);
+        applyFilters(search, value, smsStatus);
     }
+
+    function handleSmsStatus(value: string) {
+        setSmsStatus(value);
+        applyFilters(search, status, value);
+    }
+
+    const hasActiveFilters = !!(search || status || smsStatus);
 
     // ─── Row actions ───────────────────────────────────────────────────────────
 
@@ -195,7 +226,7 @@ export default function PaymentLinksIndex({
 
     function handleBatchSend() {
         if (selectedIds.size === 0) return;
-        setSending(true);
+        setIsSending(true);
         router.post(
             route('payment-links.batch-send-sms'),
             { link_ids: [...selectedIds] },
@@ -204,9 +235,9 @@ export default function PaymentLinksIndex({
                 onSuccess: () => {
                     setSelectedIds(new Set());
                     // Reload batch data so next_batch_ids + unsent_count refresh
-                    router.reload({ only: ['unsent_count', 'next_batch_ids', 'links'] });
+                    router.reload({ only: ['sending', 'unsent_count', 'next_batch_ids', 'links'] });
                 },
-                onFinish: () => setSending(false),
+                onFinish: () => setIsSending(false),
             },
         );
     }
@@ -252,6 +283,46 @@ export default function PaymentLinksIndex({
 
             <div className="py-8">
                 <div className="mx-auto max-w-7xl space-y-4 sm:px-6 lg:px-8">
+
+                    {/* Batch SMS progress banner */}
+                    {sending && (() => {
+                        const pct = sending.total > 0
+                            ? Math.min(100, Math.round((sending.processed / sending.total) * 100))
+                            : 0;
+                        return (
+                            <div className="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3.5">
+                                <div className="flex items-start gap-3">
+                                    <svg className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-brand-500"
+                                        fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10"
+                                            stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor"
+                                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className="text-sm font-medium text-brand-800">
+                                                Sending SMS messages…
+                                            </p>
+                                            <span className="shrink-0 text-sm font-semibold text-brand-700">
+                                                {pct}%
+                                            </span>
+                                        </div>
+                                        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-brand-200">
+                                            <div
+                                                className="h-full rounded-full bg-brand-500 transition-all duration-500"
+                                                style={{ width: `${pct}%` }}
+                                            />
+                                        </div>
+                                        <p className="mt-1.5 text-xs text-brand-600">
+                                            {sending.processed} of {sending.total} {sending.total === 1 ? 'message' : 'messages'} sent
+                                            &nbsp;·&nbsp; refreshing automatically
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* Flash */}
                     {flash.success && (
@@ -306,10 +377,10 @@ export default function PaymentLinksIndex({
                                 <button
                                     type="button"
                                     onClick={handleBatchSend}
-                                    disabled={sending}
+                                    disabled={isSending}
                                     className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    {sending ? (
+                                    {isSending ? (
                                         <>
                                             <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -332,8 +403,9 @@ export default function PaymentLinksIndex({
                     )}
 
                     {/* Filter bar */}
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <div className="relative flex-1">
+                    <div className="space-y-2">
+                        {/* Search */}
+                        <div className="relative">
                             <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
                                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -347,17 +419,61 @@ export default function PaymentLinksIndex({
                                 className="block w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
                             />
                         </div>
-                        <select
-                            value={status}
-                            onChange={(e) => handleStatus(e.target.value)}
-                            className="rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm text-slate-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-                        >
-                            <option value="">All Statuses</option>
-                            <option value="pending">Pending</option>
-                            <option value="paid">Paid</option>
-                            <option value="failed">Failed</option>
-                            <option value="expired">Expired</option>
-                        </select>
+
+                        {/* Pill filters */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Payment status pills */}
+                            {(['', 'pending', 'paid', 'failed', 'expired'] as const).map((s) => (
+                                <button
+                                    key={s || 'all'}
+                                    type="button"
+                                    onClick={() => handleStatus(s)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                        status === s
+                                            ? 'bg-brand-600 text-white shadow-sm'
+                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {s === '' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                                </button>
+                            ))}
+
+                            <span className="text-slate-200">|</span>
+
+                            {/* SMS status pills */}
+                            {([
+                                { value: '',         label: 'All SMS' },
+                                { value: 'not_sent', label: 'Not Sent' },
+                                { value: 'sent',     label: 'Sent' },
+                                { value: 'failed',   label: 'SMS Failed' },
+                            ] as const).map(({ value, label }) => (
+                                <button
+                                    key={value || 'all-sms'}
+                                    type="button"
+                                    onClick={() => handleSmsStatus(value)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                        smsStatus === value
+                                            ? 'bg-slate-700 text-white shadow-sm'
+                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+
+                            {hasActiveFilters && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearch(''); setStatus(''); setSmsStatus('');
+                                        applyFilters('', '', '');
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-slate-600"
+                                >
+                                    Clear filters
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Table */}
@@ -369,7 +485,7 @@ export default function PaymentLinksIndex({
                                         d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                                 </svg>
                                 <p className="text-sm text-slate-500">
-                                    {filters.search || filters.status
+                                    {hasActiveFilters
                                         ? 'No payment links match your filters.'
                                         : 'No payment links yet.'
                                     }
@@ -497,10 +613,10 @@ export default function PaymentLinksIndex({
                                                                     href={link.stripe_payment_link_url}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className="text-slate-400 hover:text-brand-700"
-                                                                    title="Open Stripe payment link"
+                                                                    className="inline-flex items-center gap-1 rounded-md bg-stripe px-2.5 py-1 text-xs font-medium text-white transition hover:opacity-90"
+                                                                    title="Open Stripe payment page"
                                                                 >
-                                                                    Open ↗
+                                                                    Click here →
                                                                 </a>
                                                             )}
                                                             {link.payment_status === 'pending' && (

@@ -41,9 +41,10 @@ return [
     ],
 
     'twilio' => [
-        'sid'   => env('TWILIO_SID'),
-        'token' => env('TWILIO_TOKEN'),
-        'from'  => env('TWILIO_FROM'),
+        'sid'         => env('TWILIO_SID'),
+        'token'       => env('TWILIO_TOKEN'),
+        'from'        => env('TWILIO_FROM'),
+        'override_to' => env('SMS_OVERRIDE_TO'),
     ],
 
 ];

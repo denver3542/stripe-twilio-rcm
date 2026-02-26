@@ -44,12 +44,20 @@ class ClientController extends Controller
             $query->where('account_status', $status);
         }
 
+        if ($linkStatus = $request->input('link_status')) {
+            $query->whereHas('paymentLinks', fn ($q) => $q->where('payment_status', $linkStatus));
+        }
+
+        if ($linkSmsStatus = $request->input('link_sms_status')) {
+            $query->whereHas('paymentLinks', fn ($q) => $q->where('sms_status', $linkSmsStatus));
+        }
+
         $query->orderByRaw("COALESCE(last_name, name, '') ASC")
               ->orderByRaw("COALESCE(first_name, '') ASC");
 
         return Inertia::render('Clients/Index', [
             'clients'    => $query->withCount(['paymentLinks as pending_links_count' => fn ($q) => $q->where('payment_status', 'pending')])->paginate(20)->withQueryString(),
-            'filters'    => $request->only(['search', 'status']),
+            'filters'    => $request->only(['search', 'status', 'link_status', 'link_sms_status']),
             'generating' => Cache::get('payment_links_generating'),
         ]);
     }

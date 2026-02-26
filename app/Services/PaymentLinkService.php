@@ -8,7 +8,6 @@ use App\Models\PaymentLink;
 use App\Repositories\Contracts\PaymentLinkRepositoryInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class PaymentLinkService
@@ -29,7 +28,6 @@ class PaymentLinkService
         return $this->paymentLinks->create([
             'client_id'               => $client->id,
             'stripe_payment_link_url' => $stripeLink->url,
-            'short_url'               => $this->shortenUrl($stripeLink->url),
             'stripe_payment_link_id'  => $stripeLink->id,
             'amount'                  => $validated['amount'],
             'description'             => $description,
@@ -59,10 +57,8 @@ class PaymentLinkService
 
         $firstName = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
 
-        $payUrl = $link->short_url ?? $link->stripe_payment_link_url;
-
         $body = "True Sport PT: Hi {$firstName}, you have a \${$link->amount} balance due. "
-            . "Pay here: {$payUrl}. "
+            . "Pay here: {$link->stripe_payment_link_url}. "
             . "Questions? Call 443 249 2990. Thank you!";
 
         $result = $this->twilio->sendSms($phone, $body);
@@ -149,10 +145,18 @@ class PaymentLinkService
 
             $patientBal = (float) $client->patient_balance;
             if ($patientBal > 0) {
-                $client->update(['patient_balance' => max(0, $patientBal - $amountPaid)]);
+                $newPatientBal = max(0, $patientBal - $amountPaid);
+                $client->update(['patient_balance' => $newPatientBal]);
             } else {
                 $outstandingBal = (float) $client->outstanding_balance;
                 $client->update(['outstanding_balance' => max(0, $outstandingBal - $amountPaid)]);
+            }
+
+            // Refresh to get updated balances, then mark account as paid if fully cleared
+            $client->refresh();
+            if ((float) $client->patient_balance <= 0 && (float) $client->outstanding_balance <= 0) {
+                $client->update(['account_status' => 'paid']);
+                Log::info("fetchStatus: client #{$client->id} balance fully cleared — status set to 'paid'");
             }
 
             Log::info("fetchStatus: recorded payment for client #{$client->id}", ['amount' => $amountPaid]);
@@ -172,21 +176,6 @@ class PaymentLinkService
             'recent_paid'            => $this->paymentLinks->recentPaid(5),
             'pending_count'          => $this->paymentLinks->pendingCount(),
         ];
-    }
-
-    private function shortenUrl(string $url): ?string
-    {
-        try {
-            $response = Http::timeout(5)->get('https://tinyurl.com/api-create.php', ['url' => $url]);
-
-            if ($response->successful() && str_starts_with($response->body(), 'https://')) {
-                return trim($response->body());
-            }
-        } catch (\Throwable $e) {
-            Log::warning("TinyURL shortening failed: " . $e->getMessage());
-        }
-
-        return null;
     }
 
     private function normalizePhone(string $phone): string

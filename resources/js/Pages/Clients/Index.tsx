@@ -1,6 +1,6 @@
 import Modal from '@/Components/Modal';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { AccountStatus, Client, PageProps, PaginatedData } from '@/types';
+import { AccountStatus, Client, PageProps, PaginatedData, PaymentSmsStatus, PaymentStatus } from '@/types';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -8,17 +8,21 @@ const statusColors: Record<AccountStatus, string> = {
     active:   'bg-brand-50 text-brand-700 border border-brand-200',
     inactive: 'bg-red-50 text-red-700 border border-red-200',
     pending:  'bg-amber-50 text-amber-700 border border-amber-200',
+    paid:     'bg-teal-50 text-teal-700 border border-teal-200',
 };
 
 const statusLabels: Record<AccountStatus, string> = {
     active:   'Active',
     inactive: 'Inactive',
     pending:  'Pending',
+    paid:     'Paid',
 };
 
 interface Filters {
     search?: string;
     status?: string;
+    link_status?: string;
+    link_sms_status?: string;
 }
 
 function displayName(client: Client): string {
@@ -55,6 +59,12 @@ export default function Index({
     const { delete: destroy, processing } = useForm({});
     const [search, setSearch] = useState(filters.search ?? '');
     const [status, setStatus] = useState(filters.status ?? '');
+    const [linkStatus, setLinkStatus] = useState<PaymentStatus | ''>(
+        (filters.link_status as PaymentStatus) ?? ''
+    );
+    const [linkSmsStatus, setLinkSmsStatus] = useState<PaymentSmsStatus | ''>(
+        (filters.link_sms_status as PaymentSmsStatus) ?? ''
+    );
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // ── Batch selection ───────────────────────────────────────────────────────
@@ -161,12 +171,22 @@ export default function Index({
     }
 
     // ── Filters ───────────────────────────────────────────────────────────────
-    function applyFilters(newSearch: string, newStatus: string) {
+    function applyFilters(
+        newSearch: string,
+        newStatus: string,
+        newLinkStatus: string,
+        newLinkSmsStatus: string,
+    ) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
             router.get(
                 route('clients.index'),
-                { search: newSearch || undefined, status: newStatus || undefined },
+                {
+                    search:          newSearch        || undefined,
+                    status:          newStatus        || undefined,
+                    link_status:     newLinkStatus    || undefined,
+                    link_sms_status: newLinkSmsStatus || undefined,
+                },
                 { preserveState: true, replace: true },
             );
         }, 300);
@@ -174,13 +194,25 @@ export default function Index({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status);
+        applyFilters(value, status, linkStatus, linkSmsStatus);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value);
+        applyFilters(search, value, linkStatus, linkSmsStatus);
     }
+
+    function handleLinkStatus(value: PaymentStatus | '') {
+        setLinkStatus(value);
+        applyFilters(search, status, value, linkSmsStatus);
+    }
+
+    function handleLinkSmsStatus(value: PaymentSmsStatus | '') {
+        setLinkSmsStatus(value);
+        applyFilters(search, status, linkStatus, value);
+    }
+
+    const hasActiveFilters = !!(search || status || linkStatus || linkSmsStatus);
 
     function handleDelete(client: Client) {
         const label = displayName(client);
@@ -296,31 +328,82 @@ export default function Index({
                     )}
 
                     {/* Search + Filter bar */}
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <div className="relative flex-1">
-                            <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                                fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                    d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-                            </svg>
-                            <input
-                                type="search"
-                                placeholder="Search by name, email, phone, or patient ID…"
-                                value={search}
-                                onChange={(e) => handleSearch(e.target.value)}
-                                className="block w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-                            />
+                    <div className="space-y-2">
+                        {/* Row 1: search + account status */}
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <div className="relative flex-1">
+                                <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                                    fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+                                </svg>
+                                <input
+                                    type="search"
+                                    placeholder="Search by name, email, phone, or patient ID…"
+                                    value={search}
+                                    onChange={(e) => handleSearch(e.target.value)}
+                                    className="block w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 shadow-sm placeholder:text-slate-400 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                                />
+                            </div>
+                            <select
+                                value={status}
+                                onChange={(e) => handleStatus(e.target.value)}
+                                className="rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm text-slate-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                            >
+                                <option value="">All Account Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="pending">Pending</option>
+                                <option value="paid">Paid</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
                         </div>
-                        <select
-                            value={status}
-                            onChange={(e) => handleStatus(e.target.value)}
-                            className="rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-8 text-sm text-slate-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
-                        >
-                            <option value="">All Statuses</option>
-                            <option value="active">Active</option>
-                            <option value="pending">Pending</option>
-                            <option value="inactive">Inactive</option>
-                        </select>
+
+                        {/* Row 2: payment link status pills + SMS status pills */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* Payment link status */}
+                            {(['', 'pending', 'paid', 'failed', 'expired'] as const).map((s) => (
+                                <button
+                                    key={s || 'all'}
+                                    type="button"
+                                    onClick={() => handleLinkStatus(s)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                        linkStatus === s
+                                            ? 'bg-brand-600 text-white shadow-sm'
+                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {s === '' ? 'All Payment Links' : s.charAt(0).toUpperCase() + s.slice(1)}
+                                </button>
+                            ))}
+
+                            <span className="text-slate-200">|</span>
+
+                            {/* SMS status */}
+                            <select
+                                value={linkSmsStatus}
+                                onChange={(e) => handleLinkSmsStatus(e.target.value as PaymentSmsStatus | '')}
+                                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                            >
+                                <option value="">All SMS Statuses</option>
+                                <option value="not_sent">Not Sent</option>
+                                <option value="sent">Sent</option>
+                                <option value="failed">SMS Failed</option>
+                            </select>
+
+                            {hasActiveFilters && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearch(''); setStatus('');
+                                        setLinkStatus(''); setLinkSmsStatus('');
+                                        applyFilters('', '', '', '');
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-slate-600"
+                                >
+                                    Clear all filters
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {/* Batch action toolbar */}
@@ -358,7 +441,7 @@ export default function Index({
                                         d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                                 </svg>
                                 <p className="text-sm text-slate-500">
-                                    {filters.search || filters.status
+                                    {hasActiveFilters
                                         ? 'No clients match your filters.'
                                         : <>No clients yet. <Link href={route('clients.create')} className="text-brand-700 underline">Add your first client.</Link></>
                                     }

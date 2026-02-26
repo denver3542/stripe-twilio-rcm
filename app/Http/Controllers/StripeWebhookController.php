@@ -101,6 +101,13 @@ class StripeWebhookController extends Controller
                 $client->update(['outstanding_balance' => max(0, $outstandingBal - $amountPaid)]);
             }
 
+            // Refresh to get updated balances, then mark account as paid if fully cleared
+            $client->refresh();
+            if ((float) $client->patient_balance <= 0 && (float) $client->outstanding_balance <= 0) {
+                $client->update(['account_status' => 'paid']);
+                Log::info("Webhook: client #{$client->id} balance fully cleared — status set to 'paid'");
+            }
+
             Log::info("Webhook: recorded payment for client #{$client->id}", ['amount' => $amountPaid]);
         });
     }

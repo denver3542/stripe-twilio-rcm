@@ -111,10 +111,11 @@ export default function Edit({ client }: PageProps<{ client: Client }>) {
                                         id="account_status"
                                         className="mt-1 block w-full rounded-md border-slate-300 bg-white shadow-sm focus:border-brand-500 focus:ring-brand-500"
                                         value={data.account_status}
-                                        onChange={(e) => setData('account_status', e.target.value as 'active' | 'inactive' | 'pending')}
+                                        onChange={(e) => setData('account_status', e.target.value as 'active' | 'inactive' | 'pending' | 'paid')}
                                     >
                                         <option value="active">Active</option>
                                         <option value="pending">Pending</option>
+                                        <option value="paid">Paid</option>
                                         <option value="inactive">Inactive</option>
                                     </select>
                                     <InputError message={errors.account_status} className="mt-2" />

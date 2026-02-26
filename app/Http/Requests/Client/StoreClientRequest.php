@@ -20,7 +20,7 @@ class StoreClientRequest extends FormRequest
             'email'               => ['required', 'email', 'max:255'],
             'outstanding_balance' => ['nullable', 'numeric', 'min:0'],
             'insurance_info'      => ['nullable', 'string'],
-            'account_status'      => ['required', 'in:active,inactive,pending'],
+            'account_status'      => ['required', 'in:active,inactive,pending,paid'],
         ];
     }
 }
