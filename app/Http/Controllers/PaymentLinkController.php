@@ -23,17 +23,23 @@ class PaymentLinkController extends Controller
 
     public function index(Request $request): Response
     {
+        $search      = trim((string) $request->input('search'));
+        $status      = $request->input('status');
+        $smsStatus   = $request->input('sms_status');
+        $amountRange = $request->input('amount_range');
+
+        // ── Main table query ────────────────────────────────────────────────────
         $query = PaymentLink::with('client')->latest();
 
-        if ($status = $request->input('status')) {
+        if ($status) {
             $query->where('payment_status', $status);
         }
 
-        if ($smsStatus = $request->input('sms_status')) {
+        if ($smsStatus) {
             $query->where('sms_status', $smsStatus);
         }
 
-        if ($search = trim((string) $request->input('search'))) {
+        if ($search) {
             $query->whereHas('client', function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('first_name', 'like', "%{$search}%")
@@ -42,24 +48,58 @@ class PaymentLinkController extends Controller
             });
         }
 
-        if ($amountRange = $request->input('amount_range')) {
+        if ($amountRange) {
             if (str_ends_with($amountRange, '+')) {
-                $min = (float) rtrim($amountRange, '+');
-                $query->where('amount', '>=', $min);
+                $query->where('amount', '>=', (float) rtrim($amountRange, '+'));
             } else {
                 [$min, $max] = explode('-', $amountRange);
                 $query->whereBetween('amount', [(float) $min, (float) $max]);
             }
         }
 
-        $unsentCount  = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')->count();
-        $nextBatchIds = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')
-            ->orderBy('id')->limit(160)->pluck('id')->toArray();
+        // ── Batch computation — always unsent+pending, but respects search & amount filters ──
+        $batchBase = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending');
+
+        if ($search) {
+            $batchBase->whereHas('client', function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('first_name', 'like', "%{$search}%")
+                  ->orWhere('last_name', 'like', "%{$search}%")
+                  ->orWhere('external_patient_id', 'like', "%{$search}%");
+            });
+        }
+
+        if ($amountRange) {
+            if (str_ends_with($amountRange, '+')) {
+                $batchBase->where('amount', '>=', (float) rtrim($amountRange, '+'));
+            } else {
+                [$min, $max] = explode('-', $amountRange);
+                $batchBase->whereBetween('amount', [(float) $min, (float) $max]);
+            }
+        }
+
+        $unsentCount  = (clone $batchBase)->count();
+        $totalBatches = max(1, (int) ceil($unsentCount / 160));
+        $currentBatch = max(1, min((int) $request->input('batch', 1), $totalBatches));
+        $batchOffset  = ($currentBatch - 1) * 160;
+
+        $nextBatchIds = (clone $batchBase)
+            ->orderBy('id')->skip($batchOffset)->take(160)->pluck('id')->toArray();
+
+        $batchExplicit = $request->has('batch');
+
+        // When a batch is explicitly selected, restrict the table to those links only
+        if ($batchExplicit && !empty($nextBatchIds)) {
+            $query->whereIn('id', $nextBatchIds);
+        }
 
         return Inertia::render('PaymentLinks/Index', [
             'links'          => $query->paginate(25)->withQueryString(),
             'filters'        => $request->only(['status', 'sms_status', 'search', 'amount_range']),
             'unsent_count'   => $unsentCount,
+            'total_batches'  => $totalBatches,
+            'current_batch'  => $currentBatch,
+            'batch_explicit' => $batchExplicit,
             'next_batch_ids' => $nextBatchIds,
             'sending'        => Cache::get('batch_sms_sending'),
         ]);

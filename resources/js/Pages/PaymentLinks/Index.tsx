@@ -94,12 +94,18 @@ export default function PaymentLinksIndex({
     links,
     filters,
     unsent_count,
+    total_batches,
+    current_batch,
+    batch_explicit,
     next_batch_ids,
     sending,
 }: PageProps<{
     links: PaginatedData<PaymentLinkWithClient>;
     filters: Filters;
     unsent_count: number;
+    total_batches: number;
+    current_batch: number;
+    batch_explicit: boolean;
     next_batch_ids: number[];
     sending: SendingStatus | null;
 }>) {
@@ -114,12 +120,19 @@ export default function PaymentLinksIndex({
     // Batch selection state
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [isSending, setIsSending] = useState(false);
+    const [currentBatch, setCurrentBatch] = useState(current_batch);
 
     // Fetch status state
     const [fetchingId, setFetchingId] = useState<number | null>(null);
     const [fetchingAll, setFetchingAll] = useState(false);
 
-    const totalBatches = Math.ceil(unsent_count / BATCH_SIZE);
+    // Auto-select the batch IDs when viewing a specific batch
+    useEffect(() => {
+        if (batch_explicit) {
+            setSelectedIds(new Set(next_batch_ids));
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [batch_explicit, current_batch]);
 
     // ─── Poll while batch SMS job is running ───────────────────────────────────
     const isSendingBatch = !!sending;
@@ -134,6 +147,7 @@ export default function PaymentLinksIndex({
     // ─── Filter handlers ───────────────────────────────────────────────────────
 
     function applyFilters(newSearch: string, newStatus: string, newSmsStatus: string, newAmountRange: string) {
+        setSelectedIds(new Set());
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
             router.get(
@@ -182,8 +196,23 @@ export default function PaymentLinksIndex({
 
     // ─── Batch handlers ────────────────────────────────────────────────────────
 
+    function handleBatchChange(n: number) {
+        setCurrentBatch(n);
+        router.get(
+            route('payment-links.index'),
+            {
+                search:       search       || undefined,
+                status:       status       || undefined,
+                sms_status:   smsStatus    || undefined,
+                amount_range: amountRange  || undefined,
+                batch:        n,
+            },
+            { preserveState: true, replace: true },
+        );
+    }
+
     function handleSelectBatch() {
-        setSelectedIds(new Set(next_batch_ids));
+        handleBatchChange(currentBatch);
     }
 
     function handleClearSelection() {
@@ -363,16 +392,29 @@ export default function PaymentLinksIndex({
                             <p className="text-sm text-amber-800">
                                 <span className="font-semibold">{unsent_count.toLocaleString()}</span> unsent payment{' '}
                                 {unsent_count === 1 ? 'link' : 'links'} —{' '}
-                                {totalBatches} {totalBatches === 1 ? 'batch' : 'batches'} of {BATCH_SIZE}
+                                {total_batches} {total_batches === 1 ? 'batch' : 'batches'} of {BATCH_SIZE}
                             </p>
-                            <button
-                                type="button"
-                                onClick={handleSelectBatch}
-                                disabled={next_batch_ids.length === 0}
-                                className="whitespace-nowrap rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                Select Batch 1 of {totalBatches} ({next_batch_ids.length} links)
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={currentBatch}
+                                    onChange={(e) => handleBatchChange(Number(e.target.value))}
+                                    className="rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-sm text-amber-800 shadow-sm focus:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                >
+                                    {Array.from({ length: total_batches }, (_, i) => i + 1).map((n) => (
+                                        <option key={n} value={n}>
+                                            Batch {n} of {total_batches}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={handleSelectBatch}
+                                    disabled={next_batch_ids.length === 0}
+                                    className="whitespace-nowrap rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 shadow-sm transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    Select ({next_batch_ids.length} links)
+                                </button>
+                            </div>
                         </div>
                     )}
 
