@@ -52,12 +52,24 @@ class ClientController extends Controller
             $query->whereHas('paymentLinks', fn ($q) => $q->where('sms_status', $linkSmsStatus));
         }
 
+        if ($amountRange = $request->input('amount_range')) {
+            // Effective balance: patient_balance if > 0, else outstanding_balance
+            $effectiveBal = DB::raw('CASE WHEN patient_balance > 0 THEN patient_balance ELSE outstanding_balance END');
+            if (str_ends_with($amountRange, '+')) {
+                $min = (float) rtrim($amountRange, '+');
+                $query->where($effectiveBal, '>=', $min);
+            } else {
+                [$min, $max] = explode('-', $amountRange);
+                $query->whereBetween($effectiveBal, [(float) $min, (float) $max]);
+            }
+        }
+
         $query->orderByRaw("COALESCE(last_name, name, '') ASC")
               ->orderByRaw("COALESCE(first_name, '') ASC");
 
         return Inertia::render('Clients/Index', [
             'clients'    => $query->withCount(['paymentLinks as pending_links_count' => fn ($q) => $q->where('payment_status', 'pending')])->paginate(20)->withQueryString(),
-            'filters'    => $request->only(['search', 'status', 'link_status', 'link_sms_status']),
+            'filters'    => $request->only(['search', 'status', 'link_status', 'link_sms_status', 'amount_range']),
             'generating' => Cache::get('payment_links_generating'),
         ]);
     }

@@ -67,7 +67,16 @@ interface Filters {
     status?: string;
     sms_status?: string;
     search?: string;
+    amount_range?: string;
 }
+
+const AMOUNT_RANGES = [
+    { value: '',        label: 'All Amounts' },
+    { value: '0-150',   label: '$0 – $150'   },
+    { value: '151-300', label: '$151 – $300'  },
+    { value: '301-500', label: '$301 – $500'  },
+    { value: '501+',    label: '$501+'        },
+] as const;
 
 interface SendingStatus {
     total: number;
@@ -99,6 +108,7 @@ export default function PaymentLinksIndex({
     const [status, setStatus] = useState(filters.status ?? '');
     const [smsStatus, setSmsStatus] = useState(filters.sms_status ?? '');
     const [search, setSearch] = useState(filters.search ?? '');
+    const [amountRange, setAmountRange] = useState(filters.amount_range ?? '');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // Batch selection state
@@ -123,15 +133,16 @@ export default function PaymentLinksIndex({
 
     // ─── Filter handlers ───────────────────────────────────────────────────────
 
-    function applyFilters(newSearch: string, newStatus: string, newSmsStatus: string) {
+    function applyFilters(newSearch: string, newStatus: string, newSmsStatus: string, newAmountRange: string) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
             router.get(
                 route('payment-links.index'),
                 {
-                    search:     newSearch     || undefined,
-                    status:     newStatus     || undefined,
-                    sms_status: newSmsStatus  || undefined,
+                    search:       newSearch       || undefined,
+                    status:       newStatus       || undefined,
+                    sms_status:   newSmsStatus    || undefined,
+                    amount_range: newAmountRange  || undefined,
                 },
                 { preserveState: true, replace: true },
             );
@@ -140,20 +151,25 @@ export default function PaymentLinksIndex({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status, smsStatus);
+        applyFilters(value, status, smsStatus, amountRange);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value, smsStatus);
+        applyFilters(search, value, smsStatus, amountRange);
     }
 
     function handleSmsStatus(value: string) {
         setSmsStatus(value);
-        applyFilters(search, status, value);
+        applyFilters(search, status, value, amountRange);
     }
 
-    const hasActiveFilters = !!(search || status || smsStatus);
+    function handleAmountRange(value: string) {
+        setAmountRange(value);
+        applyFilters(search, status, smsStatus, value);
+    }
+
+    const hasActiveFilters = !!(search || status || smsStatus || amountRange);
 
     // ─── Row actions ───────────────────────────────────────────────────────────
 
@@ -465,14 +481,32 @@ export default function PaymentLinksIndex({
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        setSearch(''); setStatus(''); setSmsStatus('');
-                                        applyFilters('', '', '');
+                                        setSearch(''); setStatus(''); setSmsStatus(''); setAmountRange('');
+                                        applyFilters('', '', '', '');
                                     }}
                                     className="text-xs text-slate-400 hover:text-slate-600"
                                 >
                                     Clear filters
                                 </button>
                             )}
+                        </div>
+
+                        {/* Amount range pills */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {AMOUNT_RANGES.map(({ value, label }) => (
+                                <button
+                                    key={value || 'all-amt'}
+                                    type="button"
+                                    onClick={() => handleAmountRange(value)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                        amountRange === value
+                                            ? 'bg-slate-700 text-white shadow-sm'
+                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
                         </div>
                     </div>
 

@@ -23,7 +23,16 @@ interface Filters {
     status?: string;
     link_status?: string;
     link_sms_status?: string;
+    amount_range?: string;
 }
+
+const AMOUNT_RANGES = [
+    { value: '',        label: 'All Amounts' },
+    { value: '0-150',   label: '$0 – $150'   },
+    { value: '151-300', label: '$151 – $300'  },
+    { value: '301-500', label: '$301 – $500'  },
+    { value: '501+',    label: '$501+'        },
+] as const;
 
 function displayName(client: Client): string {
     if (client.name) return client.name;
@@ -65,6 +74,7 @@ export default function Index({
     const [linkSmsStatus, setLinkSmsStatus] = useState<PaymentSmsStatus | ''>(
         (filters.link_sms_status as PaymentSmsStatus) ?? ''
     );
+    const [amountRange, setAmountRange] = useState(filters.amount_range ?? '');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // ── Batch selection ───────────────────────────────────────────────────────
@@ -176,6 +186,7 @@ export default function Index({
         newStatus: string,
         newLinkStatus: string,
         newLinkSmsStatus: string,
+        newAmountRange: string,
     ) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
@@ -186,6 +197,7 @@ export default function Index({
                     status:          newStatus        || undefined,
                     link_status:     newLinkStatus    || undefined,
                     link_sms_status: newLinkSmsStatus || undefined,
+                    amount_range:    newAmountRange   || undefined,
                 },
                 { preserveState: true, replace: true },
             );
@@ -194,25 +206,30 @@ export default function Index({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status, linkStatus, linkSmsStatus);
+        applyFilters(value, status, linkStatus, linkSmsStatus, amountRange);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value, linkStatus, linkSmsStatus);
+        applyFilters(search, value, linkStatus, linkSmsStatus, amountRange);
     }
 
     function handleLinkStatus(value: PaymentStatus | '') {
         setLinkStatus(value);
-        applyFilters(search, status, value, linkSmsStatus);
+        applyFilters(search, status, value, linkSmsStatus, amountRange);
     }
 
     function handleLinkSmsStatus(value: PaymentSmsStatus | '') {
         setLinkSmsStatus(value);
-        applyFilters(search, status, linkStatus, value);
+        applyFilters(search, status, linkStatus, value, amountRange);
     }
 
-    const hasActiveFilters = !!(search || status || linkStatus || linkSmsStatus);
+    function handleAmountRange(value: string) {
+        setAmountRange(value);
+        applyFilters(search, status, linkStatus, linkSmsStatus, value);
+    }
+
+    const hasActiveFilters = !!(search || status || linkStatus || linkSmsStatus || amountRange);
 
     function handleDelete(client: Client) {
         const label = displayName(client);
@@ -396,13 +413,32 @@ export default function Index({
                                     onClick={() => {
                                         setSearch(''); setStatus('');
                                         setLinkStatus(''); setLinkSmsStatus('');
-                                        applyFilters('', '', '', '');
+                                        setAmountRange('');
+                                        applyFilters('', '', '', '', '');
                                     }}
                                     className="text-xs text-slate-400 hover:text-slate-600"
                                 >
                                     Clear all filters
                                 </button>
                             )}
+                        </div>
+
+                        {/* Row 3: amount due range */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {AMOUNT_RANGES.map(({ value, label }) => (
+                                <button
+                                    key={value || 'all-amt'}
+                                    type="button"
+                                    onClick={() => handleAmountRange(value)}
+                                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                        amountRange === value
+                                            ? 'bg-slate-700 text-white shadow-sm'
+                                            : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                >
+                                    {label}
+                                </button>
+                            ))}
                         </div>
                     </div>
 

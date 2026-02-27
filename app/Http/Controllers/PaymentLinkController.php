@@ -42,13 +42,23 @@ class PaymentLinkController extends Controller
             });
         }
 
+        if ($amountRange = $request->input('amount_range')) {
+            if (str_ends_with($amountRange, '+')) {
+                $min = (float) rtrim($amountRange, '+');
+                $query->where('amount', '>=', $min);
+            } else {
+                [$min, $max] = explode('-', $amountRange);
+                $query->whereBetween('amount', [(float) $min, (float) $max]);
+            }
+        }
+
         $unsentCount  = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')->count();
         $nextBatchIds = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending')
             ->orderBy('id')->limit(160)->pluck('id')->toArray();
 
         return Inertia::render('PaymentLinks/Index', [
             'links'          => $query->paginate(25)->withQueryString(),
-            'filters'        => $request->only(['status', 'sms_status', 'search']),
+            'filters'        => $request->only(['status', 'sms_status', 'search', 'amount_range']),
             'unsent_count'   => $unsentCount,
             'next_batch_ids' => $nextBatchIds,
             'sending'        => Cache::get('batch_sms_sending'),
