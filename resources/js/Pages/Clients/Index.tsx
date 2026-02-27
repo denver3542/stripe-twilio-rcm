@@ -28,10 +28,10 @@ interface Filters {
 
 const AMOUNT_RANGES = [
     { value: '',        label: 'All Amounts' },
-    { value: '0-150',   label: '$0 – $150'   },
-    { value: '151-300', label: '$151 – $300'  },
-    { value: '301-500', label: '$301 – $500'  },
-    { value: '501+',    label: '$501+'        },
+    { value: '0-100',   label: '$0 – $100'   },
+    { value: '101-200', label: '$101 – $200'  },
+    { value: '201-300', label: '$201 – $300'  },
+    { value: '301+',    label: '$301+'        },
 ] as const;
 
 function displayName(client: Client): string {
