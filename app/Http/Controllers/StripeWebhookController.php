@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Client;
 use App\Models\ClientPayment;
 use App\Services\PaymentLinkService;
+use App\Services\RcmPortalService;
 use App\Services\StripeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,6 +19,7 @@ class StripeWebhookController extends Controller
     public function __construct(
         private readonly StripeService $stripeService,
         private readonly PaymentLinkService $paymentLinkService,
+        private readonly RcmPortalService $rcmPortalService,
     ) {}
 
     public function __invoke(Request $request): JsonResponse
@@ -82,8 +84,9 @@ class StripeWebhookController extends Controller
 
         $amountPaid = $session->amount_total / 100;
         $paidAt     = Carbon::createFromTimestamp($session->created);
+        $becamePaid = false;
 
-        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt) {
+        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt, &$becamePaid) {
             ClientPayment::create([
                 'client_id'              => $client->id,
                 'amount_paid'            => $amountPaid,
@@ -105,10 +108,16 @@ class StripeWebhookController extends Controller
             $client->refresh();
             if ((float) $client->patient_balance <= 0 && (float) $client->outstanding_balance <= 0) {
                 $client->update(['account_status' => 'paid']);
+                $becamePaid = true;
                 Log::info("Webhook: client #{$client->id} balance fully cleared — status set to 'paid'");
             }
 
             Log::info("Webhook: recorded payment for client #{$client->id}", ['amount' => $amountPaid]);
         });
+
+        // Notify RCM portal outside the transaction to avoid holding DB connections open during HTTP calls
+        if ($becamePaid && $client->external_patient_id) {
+            $this->rcmPortalService->updatePatientStatus((string) $client->external_patient_id);
+        }
     }
 }
