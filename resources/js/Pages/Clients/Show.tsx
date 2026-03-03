@@ -529,7 +529,7 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                                                         href={link.stripe_payment_link_url}
                                                                         target="_blank"
                                                                         rel="noreferrer"
-                                                                        className="inline-flex items-center gap-1 rounded-md bg-stripe px-2.5 py-1 text-xs font-medium text-white transition hover:opacity-90"
+                                                                        className="inline-flex items-center gap-1 text-xs font-medium text-stripe transition hover:opacity-70"
                                                                     >
                                                                         Click here →
                                                                     </a>

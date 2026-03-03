@@ -781,6 +781,9 @@ export default function PaymentLinksIndex({
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Created
                                             </th>
+                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                                                Stripe Link
+                                            </th>
                                             <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Actions
                                             </th>
@@ -925,22 +928,30 @@ export default function PaymentLinksIndex({
                                                         )}
                                                     </td>
 
+                                                    {/* Link */}
+                                                    <td className="whitespace-nowrap px-5 py-3.5">
+                                                        {link.stripe_payment_link_url ? (
+                                                            <a
+                                                                href={
+                                                                    link.stripe_payment_link_url
+                                                                }
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs font-medium text-stripe transition hover:opacity-70"
+                                                                title="Open Stripe payment page"
+                                                            >
+                                                                Click here →
+                                                            </a>
+                                                        ) : (
+                                                            <span className="text-slate-300">
+                                                                —
+                                                            </span>
+                                                        )}
+                                                    </td>
+
                                                     {/* Actions */}
                                                     <td className="whitespace-nowrap px-5 py-3.5 text-right text-sm">
                                                         <div className="flex items-center justify-end gap-3">
-                                                            {link.stripe_payment_link_url && (
-                                                                <a
-                                                                    href={
-                                                                        link.stripe_payment_link_url
-                                                                    }
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="inline-flex items-center gap-1 rounded-md bg-stripe px-2.5 py-1 text-xs font-medium text-white transition hover:opacity-90"
-                                                                    title="Open Stripe payment page"
-                                                                >
-                                                                    Click here →
-                                                                </a>
-                                                            )}
                                                             {link.payment_status ===
                                                                 "pending" && (
                                                                 <button
