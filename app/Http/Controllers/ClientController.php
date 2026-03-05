@@ -127,6 +127,7 @@ class ClientController extends Controller
         $clientIds = Client::whereDoesntHave('paymentLinks', function ($q) {
                 $q->where('payment_status', 'pending');
             })
+            ->where('exclude_from_payment_links', false)
             ->where(function ($q) {
                 $q->where('patient_balance', '>=', 0.50)
                   ->orWhere('outstanding_balance', '>=', 0.50);
@@ -233,6 +234,17 @@ class ClientController extends Controller
         app(TwilioService::class)->sendSms($phone, $body);
 
         return redirect()->back()->with('success', "Payment link sent to {$request->phone}.");
+    }
+
+    public function togglePaymentLinkExclusion(Client $client): RedirectResponse
+    {
+        $client->update([
+            'exclude_from_payment_links' => ! $client->exclude_from_payment_links,
+        ]);
+
+        $status = $client->exclude_from_payment_links ? 'excluded from' : 'included in';
+
+        return redirect()->back()->with('success', "Client has been {$status} payment link sending.");
     }
 
     private function normalizePhone(string $phone): string

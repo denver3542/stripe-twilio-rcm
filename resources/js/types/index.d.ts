@@ -127,6 +127,9 @@ export interface Client {
     created_at: string;
     updated_at: string;
 
+    // Payment link exclusion
+    exclude_from_payment_links: boolean;
+
     // Computed counts (present when loaded with withCount)
     pending_links_count?: number;
 

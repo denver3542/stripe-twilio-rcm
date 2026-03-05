@@ -117,6 +117,19 @@ const BATCH_SIZE = 160;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+interface Stats {
+    total: number;
+    paid: number;
+    pending: number;
+    expired: number;
+    failed: number;
+    sms_sent: number;
+    sms_not_sent: number;
+    sms_failed: number;
+    total_paid_amount: number;
+    total_pending_amount: number;
+}
+
 export default function PaymentLinksIndex({
     links,
     filters,
@@ -126,6 +139,7 @@ export default function PaymentLinksIndex({
     batch_explicit,
     next_batch_ids,
     sending,
+    stats,
 }: PageProps<{
     links: PaginatedData<PaymentLinkWithClient>;
     filters: Filters;
@@ -135,6 +149,7 @@ export default function PaymentLinksIndex({
     batch_explicit: boolean;
     next_batch_ids: number[];
     sending: SendingStatus | null;
+    stats: Stats;
 }>) {
     const { flash } = usePage<PageProps>().props;
 
@@ -338,11 +353,13 @@ export default function PaymentLinksIndex({
         );
     }
 
-    // Eligible (unsent+pending) ids on the current page
+    // Eligible (unsent+pending, non-excluded) ids on the current page
     const pageEligibleIds = links.data
         .filter(
             (l) =>
-                l.sms_status === "not_sent" && l.payment_status === "pending",
+                l.sms_status === "not_sent" &&
+                l.payment_status === "pending" &&
+                !l.client?.exclude_from_payment_links,
         )
         .map((l) => l.id);
     const allPageSelected =
@@ -481,6 +498,48 @@ export default function PaymentLinksIndex({
                             {(flash as Record<string, string>).info}
                         </div>
                     )}
+
+                    {/* Summary stats */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {/* Paid */}
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Paid</p>
+                            <p className="mt-1 text-2xl font-bold text-brand-700">{stats.paid.toLocaleString()}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{fmt(stats.total_paid_amount)} collected</p>
+                        </div>
+
+                        {/* Pending */}
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Pending</p>
+                            <p className="mt-1 text-2xl font-bold text-amber-600">{stats.pending.toLocaleString()}</p>
+                            <p className="mt-0.5 text-xs text-slate-500">{fmt(stats.total_pending_amount)} outstanding</p>
+                        </div>
+
+                        {/* Expired / Failed */}
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Expired / Failed</p>
+                            <p className="mt-1 text-2xl font-bold text-slate-500">
+                                {(stats.expired + stats.failed).toLocaleString()}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                                {stats.expired} expired · {stats.failed} failed
+                            </p>
+                        </div>
+
+                        {/* SMS */}
+                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">SMS Sent</p>
+                            <p className="mt-1 text-2xl font-bold text-slate-700">
+                                {stats.sms_sent.toLocaleString()}
+                                <span className="ml-1 text-sm font-normal text-slate-400">
+                                    / {stats.total.toLocaleString()}
+                                </span>
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                                {stats.sms_not_sent} not sent · {stats.sms_failed} failed
+                            </p>
+                        </div>
+                    </div>
 
                     {/* Batch bar */}
                     {unsent_count > 0 && (
@@ -791,11 +850,13 @@ export default function PaymentLinksIndex({
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
                                         {links.data.map((link) => {
+                                            const isExcluded = !!link.client?.exclude_from_payment_links;
                                             const isEligible =
                                                 link.sms_status ===
                                                     "not_sent" &&
                                                 link.payment_status ===
-                                                    "pending";
+                                                    "pending" &&
+                                                !isExcluded;
                                             const isChecked = selectedIds.has(
                                                 link.id,
                                             );
@@ -803,7 +864,7 @@ export default function PaymentLinksIndex({
                                             return (
                                                 <tr
                                                     key={link.id}
-                                                    className={`transition-colors hover:bg-slate-50 ${isChecked ? "bg-brand-50" : ""}`}
+                                                    className={`transition-colors ${isExcluded ? "bg-slate-50 opacity-60" : isChecked ? "bg-brand-50" : "hover:bg-slate-50"}`}
                                                 >
                                                     {/* Checkbox */}
                                                     <td className="w-10 px-4 py-3.5">
@@ -848,6 +909,14 @@ export default function PaymentLinksIndex({
                                                                                 .external_patient_id
                                                                         }
                                                                     </p>
+                                                                )}
+                                                                {isExcluded && (
+                                                                    <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                                                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                        </svg>
+                                                                        Excluded from batch
+                                                                    </span>
                                                                 )}
                                                             </>
                                                         ) : (
@@ -931,21 +1000,23 @@ export default function PaymentLinksIndex({
                                                     {/* Link */}
                                                     <td className="whitespace-nowrap px-5 py-3.5">
                                                         {link.stripe_payment_link_url ? (
-                                                            <a
-                                                                href={
-                                                                    link.stripe_payment_link_url
-                                                                }
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-xs font-medium text-stripe transition hover:opacity-70"
-                                                                title="Open Stripe payment page"
-                                                            >
-                                                                Click here →
-                                                            </a>
+                                                            link.payment_status === "paid" ? (
+                                                                <span className="text-xs font-medium text-slate-300 cursor-not-allowed" title="Already paid">
+                                                                    Link
+                                                                </span>
+                                                            ) : (
+                                                                <a
+                                                                    href={link.stripe_payment_link_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-xs font-medium text-stripe transition hover:opacity-70"
+                                                                    title="Open Stripe payment page"
+                                                                >
+                                                                    Link
+                                                                </a>
+                                                            )
                                                         ) : (
-                                                            <span className="text-slate-300">
-                                                                —
-                                                            </span>
+                                                            <span className="text-slate-300">—</span>
                                                         )}
                                                     </td>
 
@@ -997,19 +1068,42 @@ export default function PaymentLinksIndex({
                                                                 "pending" &&
                                                                 link.sms_status !==
                                                                     "sent" && (
-                                                                    <Link
-                                                                        href={route(
-                                                                            "payment-links.send-sms",
-                                                                            link.id,
-                                                                        )}
-                                                                        method="post"
-                                                                        as="button"
-                                                                        preserveScroll
-                                                                        className="text-slate-400 hover:text-brand-700"
-                                                                    >
-                                                                        Send SMS
-                                                                    </Link>
+                                                                    isExcluded ? (
+                                                                        <span
+                                                                            className="cursor-not-allowed text-slate-300"
+                                                                            title="Client is excluded from payment link sending"
+                                                                        >
+                                                                            Send SMS
+                                                                        </span>
+                                                                    ) : (
+                                                                        <Link
+                                                                            href={route(
+                                                                                "payment-links.send-sms",
+                                                                                link.id,
+                                                                            )}
+                                                                            method="post"
+                                                                            as="button"
+                                                                            preserveScroll
+                                                                            className="text-slate-400 hover:text-brand-700"
+                                                                        >
+                                                                            Send SMS
+                                                                        </Link>
+                                                                    )
                                                                 )}
+                                                            {link.client && (
+                                                                <Link
+                                                                    href={route('clients.toggle-payment-link-exclusion', link.client.id)}
+                                                                    method="patch"
+                                                                    as="button"
+                                                                    preserveScroll
+                                                                    className={isExcluded
+                                                                        ? "text-amber-600 hover:text-amber-800"
+                                                                        : "text-slate-400 hover:text-amber-600"}
+                                                                    title={isExcluded ? 'Include client in batch sending' : 'Exclude client from batch sending'}
+                                                                >
+                                                                    {isExcluded ? 'Include' : 'Exclude'}
+                                                                </Link>
+                                                            )}
                                                             <button
                                                                 onClick={() =>
                                                                     handleDelete(

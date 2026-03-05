@@ -69,6 +69,9 @@ class Client extends Model
         // Stripe payment link
         'payment_link',
         'stripe_payment_link_id',
+
+        // Payment link exclusion
+        'exclude_from_payment_links',
     ];
 
     protected function casts(): array
@@ -80,8 +83,9 @@ class Client extends Model
             'insurance_payments'  => 'decimal:2',
             'patient_payments'    => 'decimal:2',
             'insurance_balance'   => 'decimal:2',
-            'patient_balance'     => 'decimal:2',
-            'date_of_birth'       => 'date',
+            'patient_balance'             => 'decimal:2',
+            'date_of_birth'               => 'date',
+            'exclude_from_payment_links'  => 'boolean',
         ];
     }
 

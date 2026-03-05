@@ -29,6 +29,7 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
             ->whereIn('id', $this->linkIds)
             ->where('payment_status', 'pending')
             ->where('sms_status', 'not_sent')
+            ->whereHas('client', fn ($q) => $q->where('exclude_from_payment_links', false))
             ->get();
 
         $total = $links->count();

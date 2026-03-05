@@ -510,7 +510,7 @@ export default function Index({
                                             const balance = Number(client.patient_balance) || Number(client.outstanding_balance);
                                             const isSelected = selectedIds.has(client.id);
                                             return (
-                                                <tr key={client.id} className={`transition-colors ${isSelected ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}>
+                                                <tr key={client.id} className={`transition-colors ${client.exclude_from_payment_links ? 'bg-slate-50 opacity-70' : isSelected ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}>
                                                     {/* Checkbox */}
                                                     <td className="w-10 px-4 py-3.5">
                                                         <input
@@ -595,10 +595,20 @@ export default function Index({
                                                     </td>
 
                                                     {/* Status */}
-                                                    <td className="whitespace-nowrap px-5 py-3.5">
-                                                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[client.account_status]}`}>
-                                                            {statusLabels[client.account_status]}
-                                                        </span>
+                                                    <td className="px-5 py-3.5">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[client.account_status]}`}>
+                                                                {statusLabels[client.account_status]}
+                                                            </span>
+                                                            {client.exclude_from_payment_links && (
+                                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                                                                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                    </svg>
+                                                                    Link Excluded
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
 
                                                     {/* Actions */}
@@ -615,6 +625,18 @@ export default function Index({
                                                             >
                                                                 SMS
                                                             </button>
+                                                            <Link
+                                                                href={route('clients.toggle-payment-link-exclusion', client.id)}
+                                                                method="patch"
+                                                                as="button"
+                                                                preserveScroll
+                                                                className={client.exclude_from_payment_links
+                                                                    ? "text-amber-600 hover:text-amber-800"
+                                                                    : "text-slate-400 hover:text-amber-600"}
+                                                                title={client.exclude_from_payment_links ? 'Include in batch sending' : 'Exclude from batch sending'}
+                                                            >
+                                                                {client.exclude_from_payment_links ? 'Include' : 'Exclude'}
+                                                            </Link>
                                                             <button
                                                                 onClick={() => handleDelete(client)}
                                                                 disabled={processing}

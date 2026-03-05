@@ -58,7 +58,9 @@ class PaymentLinkController extends Controller
         }
 
         // ── Batch computation — always unsent+pending, but respects search & amount filters ──
-        $batchBase = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending');
+        $batchBase = PaymentLink::where('sms_status', 'not_sent')
+            ->where('payment_status', 'pending')
+            ->whereHas('client', fn ($q) => $q->where('exclude_from_payment_links', false));
 
         if ($search) {
             $batchBase->whereHas('client', function ($q) use ($search) {
@@ -93,6 +95,20 @@ class PaymentLinkController extends Controller
             $query->whereIn('id', $nextBatchIds);
         }
 
+        // ── Global summary stats (always unfiltered) ────────────────────────────
+        $stats = [
+            'total'                => PaymentLink::count(),
+            'paid'                 => PaymentLink::where('payment_status', 'paid')->count(),
+            'pending'              => PaymentLink::where('payment_status', 'pending')->count(),
+            'expired'              => PaymentLink::where('payment_status', 'expired')->count(),
+            'failed'               => PaymentLink::where('payment_status', 'failed')->count(),
+            'sms_sent'             => PaymentLink::where('sms_status', 'sent')->count(),
+            'sms_not_sent'         => PaymentLink::where('sms_status', 'not_sent')->count(),
+            'sms_failed'           => PaymentLink::where('sms_status', 'failed')->count(),
+            'total_paid_amount'    => (float) PaymentLink::where('payment_status', 'paid')->sum('amount'),
+            'total_pending_amount' => (float) PaymentLink::where('payment_status', 'pending')->sum('amount'),
+        ];
+
         return Inertia::render('PaymentLinks/Index', [
             'links'          => $query->paginate(25)->withQueryString(),
             'filters'        => $request->only(['status', 'sms_status', 'search', 'amount_range']),
@@ -102,6 +118,7 @@ class PaymentLinkController extends Controller
             'batch_explicit' => $batchExplicit,
             'next_batch_ids' => $nextBatchIds,
             'sending'        => Cache::get('batch_sms_sending'),
+            'stats'          => $stats,
         ]);
     }
 

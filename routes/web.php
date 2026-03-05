@@ -34,6 +34,7 @@ Route::middleware('auth')->group(function () {
     Route::post('clients/generate-all-payment-links', [ClientController::class, 'generateAllPaymentLinks'])->name('clients.generate-all-payment-links');
     Route::post('clients/cancel-payment-link-generation', [ClientController::class, 'cancelPaymentLinkGeneration'])->name('clients.cancel-payment-link-generation');
     Route::post('clients/{client}/send-to-phone', [ClientController::class, 'sendToPhone'])->name('clients.send-to-phone');
+    Route::patch('clients/{client}/toggle-payment-link-exclusion', [ClientController::class, 'togglePaymentLinkExclusion'])->name('clients.toggle-payment-link-exclusion');
     Route::resource('clients', ClientController::class);
 
     Route::get('payment-links', [PaymentLinkController::class, 'index'])->name('payment-links.index');
