@@ -87,6 +87,9 @@ class StripeWebhookController extends Controller
         $becamePaid = false;
 
         DB::transaction(function () use ($client, $session, $amountPaid, $paidAt, &$becamePaid) {
+            // Lock the client row so concurrent webhook deliveries can't race on the balance
+            $client = Client::lockForUpdate()->find($client->id);
+
             ClientPayment::create([
                 'client_id'              => $client->id,
                 'amount_paid'            => $amountPaid,

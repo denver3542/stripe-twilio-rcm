@@ -613,35 +613,64 @@ export default function Index({
 
                                                     {/* Actions */}
                                                     <td className="whitespace-nowrap px-5 py-3.5 text-right text-sm">
-                                                        <div className="flex items-center justify-end gap-3">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {/* View */}
                                                             <Link href={route('clients.show', client.id)}
-                                                                  className="text-slate-400 hover:text-brand-700">View</Link>
+                                                                  title="View client"
+                                                                  className="text-slate-400 hover:text-brand-700">
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                </svg>
+                                                            </Link>
+                                                            {/* Edit */}
                                                             <Link href={route('clients.edit', client.id)}
-                                                                  className="text-slate-400 hover:text-brand-700">Edit</Link>
+                                                                  title="Edit client"
+                                                                  className="text-slate-400 hover:text-brand-700">
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                </svg>
+                                                            </Link>
+                                                            {/* SMS to alternate number */}
                                                             <button
                                                                 onClick={() => openAltModal(client)}
-                                                                className="text-slate-400 hover:text-brand-700"
                                                                 title="Send payment link to alternate number"
+                                                                className="text-slate-400 hover:text-brand-700"
                                                             >
-                                                                SMS
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                                                                </svg>
                                                             </button>
+                                                            {/* Exclude / Include */}
                                                             <Link
                                                                 href={route('clients.toggle-payment-link-exclusion', client.id)}
                                                                 method="patch"
                                                                 as="button"
                                                                 preserveScroll
-                                                                className={client.exclude_from_payment_links
-                                                                    ? "text-amber-600 hover:text-amber-800"
-                                                                    : "text-slate-400 hover:text-amber-600"}
                                                                 title={client.exclude_from_payment_links ? 'Include in batch sending' : 'Exclude from batch sending'}
+                                                                className={client.exclude_from_payment_links ? "text-amber-500 hover:text-amber-700" : "text-slate-400 hover:text-amber-500"}
                                                             >
-                                                                {client.exclude_from_payment_links ? 'Include' : 'Exclude'}
+                                                                {client.exclude_from_payment_links ? (
+                                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                    </svg>
+                                                                )}
                                                             </Link>
+                                                            {/* Delete */}
                                                             <button
                                                                 onClick={() => handleDelete(client)}
                                                                 disabled={processing}
+                                                                title="Delete client"
                                                                 className="text-slate-400 hover:text-red-600 disabled:opacity-50"
-                                                            >Delete</button>
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>

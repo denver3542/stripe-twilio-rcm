@@ -834,15 +834,6 @@ export default function PaymentLinksIndex({
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 SMS
                                             </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Paid At
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Created
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Stripe Link
-                                            </th>
                                             <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Actions
                                             </th>
@@ -918,6 +909,7 @@ export default function PaymentLinksIndex({
                                                                         Excluded from batch
                                                                     </span>
                                                                 )}
+                                                                <p className="mt-0.5 text-xs text-slate-300">{fmtDate(link.created_at)}</p>
                                                             </>
                                                         ) : (
                                                             <span className="text-sm text-slate-400">
@@ -955,13 +947,13 @@ export default function PaymentLinksIndex({
                                                         <span
                                                             className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${paymentStatusColors[link.payment_status]}`}
                                                         >
-                                                            {
-                                                                paymentStatusLabels[
-                                                                    link
-                                                                        .payment_status
-                                                                ]
-                                                            }
+                                                            {paymentStatusLabels[link.payment_status]}
                                                         </span>
+                                                        {link.paid_at && (
+                                                            <p className="mt-0.5 text-xs text-slate-400">
+                                                                {fmtDate(link.paid_at)}
+                                                            </p>
+                                                        )}
                                                     </td>
 
                                                     {/* SMS status */}
@@ -969,150 +961,110 @@ export default function PaymentLinksIndex({
                                                         <span
                                                             className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${smsStatusColors[link.sms_status]}`}
                                                         >
-                                                            {
-                                                                smsStatusLabels[
-                                                                    link
-                                                                        .sms_status
-                                                                ]
-                                                            }
+                                                            {smsStatusLabels[link.sms_status]}
                                                         </span>
                                                         {link.sms_sent_at && (
                                                             <p className="mt-0.5 text-xs text-slate-400">
-                                                                {fmtDate(
-                                                                    link.sms_sent_at,
-                                                                )}
+                                                                {fmtDate(link.sms_sent_at)}
                                                             </p>
-                                                        )}
-                                                    </td>
-
-                                                    {/* Paid at */}
-                                                    <td className="whitespace-nowrap px-5 py-3.5 text-sm text-slate-600">
-                                                        {fmtDate(link.paid_at)}
-                                                    </td>
-
-                                                    {/* Created at */}
-                                                    <td className="whitespace-nowrap px-5 py-3.5 text-sm text-slate-400">
-                                                        {fmtDate(
-                                                            link.created_at,
-                                                        )}
-                                                    </td>
-
-                                                    {/* Link */}
-                                                    <td className="whitespace-nowrap px-5 py-3.5">
-                                                        {link.stripe_payment_link_url ? (
-                                                            link.payment_status === "paid" ? (
-                                                                <span className="text-xs font-medium text-slate-300 cursor-not-allowed" title="Already paid">
-                                                                    Link
-                                                                </span>
-                                                            ) : (
-                                                                <a
-                                                                    href={link.stripe_payment_link_url}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-xs font-medium text-stripe transition hover:opacity-70"
-                                                                    title="Open Stripe payment page"
-                                                                >
-                                                                    Link
-                                                                </a>
-                                                            )
-                                                        ) : (
-                                                            <span className="text-slate-300">—</span>
                                                         )}
                                                     </td>
 
                                                     {/* Actions */}
                                                     <td className="whitespace-nowrap px-5 py-3.5 text-right text-sm">
-                                                        <div className="flex items-center justify-end gap-3">
-                                                            {link.payment_status ===
-                                                                "pending" && (
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {/* Stripe link */}
+                                                            {link.stripe_payment_link_url && (
+                                                                link.payment_status === "paid" ? (
+                                                                    <span className="cursor-not-allowed text-slate-300" title="Already paid">
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                        </svg>
+                                                                    </span>
+                                                                ) : (
+                                                                    <a
+                                                                        href={link.stripe_payment_link_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        title="Open Stripe payment page"
+                                                                        className="text-stripe transition hover:opacity-70"
+                                                                    >
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                        </svg>
+                                                                    </a>
+                                                                )
+                                                            )}
+                                                            {/* Fetch status */}
+                                                            {link.payment_status === "pending" && (
                                                                 <button
-                                                                    onClick={() =>
-                                                                        handleFetchStatus(
-                                                                            link,
-                                                                        )
-                                                                    }
-                                                                    disabled={
-                                                                        fetchingId ===
-                                                                        link.id
-                                                                    }
-                                                                    title="Query Stripe for latest payment status"
-                                                                    className="flex items-center gap-1 text-slate-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                    onClick={() => handleFetchStatus(link)}
+                                                                    disabled={fetchingId === link.id}
+                                                                    title={fetchingId === link.id ? "Checking…" : "Fetch status from Stripe"}
+                                                                    className="text-slate-400 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                                                                 >
-                                                                    {fetchingId ===
-                                                                    link.id ? (
-                                                                        <Spinner />
+                                                                    {fetchingId === link.id ? (
+                                                                        <Spinner className="h-4 w-4" />
                                                                     ) : (
-                                                                        <svg
-                                                                            className="h-3.5 w-3.5"
-                                                                            fill="none"
-                                                                            viewBox="0 0 24 24"
-                                                                            stroke="currentColor"
-                                                                        >
-                                                                            <path
-                                                                                strokeLinecap="round"
-                                                                                strokeLinejoin="round"
-                                                                                strokeWidth={
-                                                                                    2
-                                                                                }
-                                                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                                                                            />
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                                                         </svg>
                                                                     )}
-                                                                    {fetchingId ===
-                                                                    link.id
-                                                                        ? "Checking…"
-                                                                        : "Fetch Status"}
                                                                 </button>
                                                             )}
-                                                            {link.payment_status ===
-                                                                "pending" &&
-                                                                link.sms_status !==
-                                                                    "sent" && (
-                                                                    isExcluded ? (
-                                                                        <span
-                                                                            className="cursor-not-allowed text-slate-300"
-                                                                            title="Client is excluded from payment link sending"
-                                                                        >
-                                                                            Send SMS
-                                                                        </span>
-                                                                    ) : (
-                                                                        <Link
-                                                                            href={route(
-                                                                                "payment-links.send-sms",
-                                                                                link.id,
-                                                                            )}
-                                                                            method="post"
-                                                                            as="button"
-                                                                            preserveScroll
-                                                                            className="text-slate-400 hover:text-brand-700"
-                                                                        >
-                                                                            Send SMS
-                                                                        </Link>
-                                                                    )
-                                                                )}
+                                                            {/* Send SMS */}
+                                                            {link.payment_status === "pending" && link.sms_status !== "sent" && (
+                                                                isExcluded ? (
+                                                                    <span className="cursor-not-allowed text-slate-300" title="Client is excluded from payment link sending">
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                                                                        </svg>
+                                                                    </span>
+                                                                ) : (
+                                                                    <Link
+                                                                        href={route("payment-links.send-sms", link.id)}
+                                                                        method="post"
+                                                                        as="button"
+                                                                        preserveScroll
+                                                                        title="Send SMS"
+                                                                        className="text-slate-400 hover:text-brand-700"
+                                                                    >
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                                                                        </svg>
+                                                                    </Link>
+                                                                )
+                                                            )}
+                                                            {/* Exclude / Include */}
                                                             {link.client && (
                                                                 <Link
                                                                     href={route('clients.toggle-payment-link-exclusion', link.client.id)}
                                                                     method="patch"
                                                                     as="button"
                                                                     preserveScroll
-                                                                    className={isExcluded
-                                                                        ? "text-amber-600 hover:text-amber-800"
-                                                                        : "text-slate-400 hover:text-amber-600"}
                                                                     title={isExcluded ? 'Include client in batch sending' : 'Exclude client from batch sending'}
+                                                                    className={isExcluded ? "text-amber-500 hover:text-amber-700" : "text-slate-400 hover:text-amber-500"}
                                                                 >
-                                                                    {isExcluded ? 'Include' : 'Exclude'}
+                                                                    {isExcluded ? (
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                        </svg>
+                                                                    ) : (
+                                                                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                        </svg>
+                                                                    )}
                                                                 </Link>
                                                             )}
+                                                            {/* Delete */}
                                                             <button
-                                                                onClick={() =>
-                                                                    handleDelete(
-                                                                        link,
-                                                                    )
-                                                                }
+                                                                onClick={() => handleDelete(link)}
+                                                                title="Delete payment link"
                                                                 className="text-slate-400 hover:text-red-600"
                                                             >
-                                                                Delete
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
                                                             </button>
                                                         </div>
                                                     </td>
