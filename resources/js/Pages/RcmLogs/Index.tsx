@@ -155,7 +155,7 @@ function FilterBar({ filters }: { filters: Filters }) {
     const [local, setLocal] = useState<Filters>(filters);
 
     function apply() {
-        router.get(route("rcm-logs.index"), local as Record<string, string>, { preserveScroll: true });
+        router.get(route("rcm-logs.index"), local as unknown as Record<string, string>, { preserveScroll: true });
     }
 
     function clear() {
