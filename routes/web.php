@@ -5,6 +5,7 @@ use App\Http\Controllers\ClientImportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaymentLinkController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RcmLogController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -47,6 +48,8 @@ Route::middleware('auth')->group(function () {
     Route::post('payment-links/{paymentLink}/fetch-status', [PaymentLinkController::class, 'fetchStatus'])->name('payment-links.fetch-status');
     Route::delete('payment-links/{paymentLink}', [PaymentLinkController::class, 'destroy'])
         ->name('payment-links.destroy');
+
+    Route::get('rcm-logs', [RcmLogController::class, 'index'])->name('rcm-logs.index');
 });
 
 require __DIR__.'/auth.php';

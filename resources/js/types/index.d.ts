@@ -176,6 +176,41 @@ export interface DashboardStats {
     total_clients: number;
 }
 
+export type RcmLogStatus =
+    | 'success'
+    | 'failed'
+    | 'retried_success'
+    | 'retried_failed'
+    | 'skipped';
+
+export type RcmLogEvent = 'auth_token_fetch' | 'patient_status_update';
+
+export interface RcmUpdateLog {
+    id: number;
+    client_id: number | null;
+    patient_id: string | null;
+    event: RcmLogEvent;
+    status: RcmLogStatus;
+    triggered_by: string;
+    http_status: number | null;
+    request_payload: Record<string, unknown> | null;
+    response_body: string | null;
+    error_message: string | null;
+    retried: boolean;
+    created_at: string;
+    updated_at: string;
+    client?: Client;
+}
+
+export interface RcmLogStats {
+    total: number;
+    success: number;
+    failed: number;
+    skipped: number;
+    retried: number;
+    token_failures: number;
+}
+
 export interface PaginationLink {
     url: string | null;
     label: string;

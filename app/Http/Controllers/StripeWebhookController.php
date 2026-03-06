@@ -120,7 +120,11 @@ class StripeWebhookController extends Controller
 
         // Notify RCM portal outside the transaction to avoid holding DB connections open during HTTP calls
         if ($becamePaid && $client->external_patient_id) {
-            $this->rcmPortalService->updatePatientStatus((string) $client->external_patient_id);
+            $this->rcmPortalService->updatePatientStatus(
+                (string) $client->external_patient_id,
+                $client->id,
+                'webhook'
+            );
         }
     }
 }
