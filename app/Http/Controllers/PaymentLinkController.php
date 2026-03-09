@@ -23,13 +23,28 @@ class PaymentLinkController extends Controller
 
     public function index(Request $request): Response
     {
-        $search      = trim((string) $request->input('search'));
-        $status      = $request->input('status');
-        $smsStatus   = $request->input('sms_status');
-        $amountRange = $request->input('amount_range');
+        $search       = trim((string) $request->input('search'));
+        $status       = $request->input('status');
+        $smsStatus    = $request->input('sms_status');
+        $amountRange  = $request->input('amount_range');
+        $smsSentFrom  = $request->input('sms_sent_from');
+        $smsSentTo    = $request->input('sms_sent_to');
+
+        // ── Sorting ─────────────────────────────────────────────────────────────
+        $allowedSorts = ['created_at', 'amount', 'payment_status', 'sms_status', 'sms_sent_at', 'paid_at', 'client_name'];
+        $sort = in_array($request->input('sort'), $allowedSorts) ? $request->input('sort') : 'created_at';
+        $dir  = $request->input('direction') === 'asc' ? 'asc' : 'desc';
 
         // ── Main table query ────────────────────────────────────────────────────
-        $query = PaymentLink::with('client')->latest();
+        if ($sort === 'client_name') {
+            $query = PaymentLink::with('client')
+                ->join('clients', 'clients.id', '=', 'payment_links.client_id')
+                ->select('payment_links.*')
+                ->orderByRaw("COALESCE(clients.last_name, clients.name, '') {$dir}")
+                ->orderByRaw("COALESCE(clients.first_name, '') {$dir}");
+        } else {
+            $query = PaymentLink::with('client')->orderBy($sort, $dir);
+        }
 
         if ($status) {
             $query->where('payment_status', $status);
@@ -37,6 +52,16 @@ class PaymentLinkController extends Controller
 
         if ($smsStatus) {
             $query->where('sms_status', $smsStatus);
+        }
+
+        $displayTz = config('app.display_timezone');
+
+        if ($smsSentFrom) {
+            $query->where('sms_sent_at', '>=', \Carbon\Carbon::parse($smsSentFrom, $displayTz)->startOfDay()->utc());
+        }
+
+        if ($smsSentTo) {
+            $query->where('sms_sent_at', '<=', \Carbon\Carbon::parse($smsSentTo, $displayTz)->endOfDay()->utc());
         }
 
         if ($search) {
@@ -111,7 +136,7 @@ class PaymentLinkController extends Controller
 
         return Inertia::render('PaymentLinks/Index', [
             'links'          => $query->paginate(25)->withQueryString(),
-            'filters'        => $request->only(['status', 'sms_status', 'search', 'amount_range']),
+            'filters'        => (object) array_filter($request->only(['status', 'sms_status', 'search', 'amount_range', 'sms_sent_from', 'sms_sent_to', 'sort', 'direction']), fn ($v) => $v !== null),
             'unsent_count'   => $unsentCount,
             'total_batches'  => $totalBatches,
             'current_batch'  => $currentBatch,

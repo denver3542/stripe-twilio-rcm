@@ -50,6 +50,7 @@ function fmtDate(dateStr: string | null | undefined): string {
         month: "short",
         day: "numeric",
         year: "numeric",
+        timeZone: "America/New_York",
     });
 }
 
@@ -88,6 +89,40 @@ const smsStatusLabels: Record<PaymentSmsStatus, string> = {
     failed: "Failed",
 };
 
+// ─── Sort header ──────────────────────────────────────────────────────────────
+
+function SortHeader({
+    label,
+    column,
+    sort,
+    direction,
+    onSort,
+    className = "",
+}: {
+    label: string;
+    column: string;
+    sort: string;
+    direction: string;
+    onSort: (col: string, dir: string) => void;
+    className?: string;
+}) {
+    const active  = sort === column;
+    const nextDir = active && direction === "asc" ? "desc" : "asc";
+    return (
+        <th
+            className={`cursor-pointer select-none px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider transition-colors hover:text-slate-700 ${active ? "text-brand-600" : "text-slate-500"} ${className}`}
+            onClick={() => onSort(column, nextDir)}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                <span className={active ? "text-brand-500" : "text-slate-300"}>
+                    {active && direction === "asc" ? "↑" : "↓"}
+                </span>
+            </span>
+        </th>
+    );
+}
+
 // ─── Filters type ─────────────────────────────────────────────────────────────
 
 interface Filters {
@@ -95,6 +130,10 @@ interface Filters {
     sms_status?: string;
     search?: string;
     amount_range?: string;
+    sms_sent_from?: string;
+    sms_sent_to?: string;
+    sort?: string;
+    direction?: string;
 }
 
 const AMOUNT_RANGES = [
@@ -157,6 +196,10 @@ export default function PaymentLinksIndex({
     const [smsStatus, setSmsStatus] = useState(filters.sms_status ?? "");
     const [search, setSearch] = useState(filters.search ?? "");
     const [amountRange, setAmountRange] = useState(filters.amount_range ?? "");
+    const [smsSentFrom, setSmsSentFrom] = useState(filters.sms_sent_from ?? "");
+    const [smsSentTo, setSmsSentTo] = useState(filters.sms_sent_to ?? "");
+    const [sort, setSort] = useState(filters.sort ?? "created_at");
+    const [direction, setDirection] = useState(filters.direction ?? "desc");
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // Batch selection state
@@ -195,6 +238,10 @@ export default function PaymentLinksIndex({
         newStatus: string,
         newSmsStatus: string,
         newAmountRange: string,
+        newSmsSentFrom: string,
+        newSmsSentTo: string,
+        newSort: string,
+        newDirection: string,
     ) {
         setSelectedIds(new Set());
         clearTimeout(searchTimer.current);
@@ -202,10 +249,14 @@ export default function PaymentLinksIndex({
             router.get(
                 route("payment-links.index"),
                 {
-                    search: newSearch || undefined,
-                    status: newStatus || undefined,
-                    sms_status: newSmsStatus || undefined,
-                    amount_range: newAmountRange || undefined,
+                    search:         newSearch || undefined,
+                    status:         newStatus || undefined,
+                    sms_status:     newSmsStatus || undefined,
+                    amount_range:   newAmountRange || undefined,
+                    sms_sent_from:  newSmsSentFrom || undefined,
+                    sms_sent_to:    newSmsSentTo || undefined,
+                    sort:           newSort !== "created_at" ? newSort : undefined,
+                    direction:      newDirection !== "desc" ? newDirection : undefined,
                 },
                 { preserveState: true, replace: true },
             );
@@ -214,25 +265,41 @@ export default function PaymentLinksIndex({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status, smsStatus, amountRange);
+        applyFilters(value, status, smsStatus, amountRange, smsSentFrom, smsSentTo, sort, direction);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value, smsStatus, amountRange);
+        applyFilters(search, value, smsStatus, amountRange, smsSentFrom, smsSentTo, sort, direction);
     }
 
     function handleSmsStatus(value: string) {
         setSmsStatus(value);
-        applyFilters(search, status, value, amountRange);
+        applyFilters(search, status, value, amountRange, smsSentFrom, smsSentTo, sort, direction);
     }
 
     function handleAmountRange(value: string) {
         setAmountRange(value);
-        applyFilters(search, status, smsStatus, value);
+        applyFilters(search, status, smsStatus, value, smsSentFrom, smsSentTo, sort, direction);
     }
 
-    const hasActiveFilters = !!(search || status || smsStatus || amountRange);
+    function handleSmsSentFrom(value: string) {
+        setSmsSentFrom(value);
+        applyFilters(search, status, smsStatus, amountRange, value, smsSentTo, sort, direction);
+    }
+
+    function handleSmsSentTo(value: string) {
+        setSmsSentTo(value);
+        applyFilters(search, status, smsStatus, amountRange, smsSentFrom, value, sort, direction);
+    }
+
+    function handleSort(col: string, dir: string) {
+        setSort(col);
+        setDirection(dir);
+        applyFilters(search, status, smsStatus, amountRange, smsSentFrom, smsSentTo, col, dir);
+    }
+
+    const hasActiveFilters = !!(search || status || smsStatus || amountRange || smsSentFrom || smsSentTo);
 
     // ─── Row actions ───────────────────────────────────────────────────────────
 
@@ -255,11 +322,15 @@ export default function PaymentLinksIndex({
         router.get(
             route("payment-links.index"),
             {
-                search: search || undefined,
-                status: status || undefined,
-                sms_status: smsStatus || undefined,
-                amount_range: amountRange || undefined,
-                batch: n,
+                search:         search || undefined,
+                status:         status || undefined,
+                sms_status:     smsStatus || undefined,
+                amount_range:   amountRange || undefined,
+                sms_sent_from:  smsSentFrom || undefined,
+                sms_sent_to:    smsSentTo || undefined,
+                sort:           sort !== "created_at" ? sort : undefined,
+                direction:      direction !== "desc" ? direction : undefined,
+                batch:          n,
             },
             { preserveState: true, replace: true },
         );
@@ -741,7 +812,9 @@ export default function PaymentLinksIndex({
                                         setStatus("");
                                         setSmsStatus("");
                                         setAmountRange("");
-                                        applyFilters("", "", "", "");
+                                        setSmsSentFrom("");
+                                        setSmsSentTo("");
+                                        applyFilters("", "", "", "", "", "", sort, direction);
                                     }}
                                     className="text-xs text-slate-400 hover:text-slate-600"
                                 >
@@ -749,6 +822,26 @@ export default function PaymentLinksIndex({
                                 </button>
                             )}
                         </div>
+
+                        {/* SMS sent date range — only visible when sms_status=sent */}
+                        {smsStatus === "sent" && (
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-xs font-medium text-slate-400">SMS sent:</span>
+                                <input
+                                    type="date"
+                                    value={smsSentFrom}
+                                    onChange={e => handleSmsSentFrom(e.target.value)}
+                                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                                />
+                                <span className="text-xs text-slate-300">–</span>
+                                <input
+                                    type="date"
+                                    value={smsSentTo}
+                                    onChange={e => handleSmsSentTo(e.target.value)}
+                                    className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm focus:border-brand-400 focus:outline-none focus:ring-1 focus:ring-brand-400"
+                                />
+                            </div>
+                        )}
 
                         {/* Amount range pills */}
                         <div className="flex flex-wrap items-center gap-2">
@@ -802,38 +895,24 @@ export default function PaymentLinksIndex({
                                                 {pageEligibleIds.length > 0 && (
                                                     <input
                                                         type="checkbox"
-                                                        checked={
-                                                            allPageSelected
-                                                        }
+                                                        checked={allPageSelected}
                                                         ref={(el) => {
                                                             if (el)
                                                                 el.indeterminate =
                                                                     !allPageSelected &&
                                                                     somePageSelected;
                                                         }}
-                                                        onChange={
-                                                            handleTogglePage
-                                                        }
+                                                        onChange={handleTogglePage}
                                                         title="Toggle all eligible on this page"
                                                         className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                                                     />
                                                 )}
                                             </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Patient
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Amount
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Description
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                Payment
-                                            </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                                SMS
-                                            </th>
+                                            <SortHeader label="Patient"   column="client_name"    sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="Amount"  column="amount"         sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="Payment"   column="payment_status" sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="SMS"       column="sms_status"     sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="Sent Date" column="sms_sent_at"    sort={sort} direction={direction} onSort={handleSort} />
                                             <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">
                                                 Actions
                                             </th>
@@ -925,22 +1004,6 @@ export default function PaymentLinksIndex({
                                                         </span>
                                                     </td>
 
-                                                    {/* Description */}
-                                                    <td className="px-5 py-3.5 text-sm text-slate-500 max-w-[200px]">
-                                                        <span
-                                                            className="line-clamp-2"
-                                                            title={
-                                                                link.description ??
-                                                                undefined
-                                                            }
-                                                        >
-                                                            {link.description || (
-                                                                <span className="text-slate-300">
-                                                                    —
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    </td>
 
                                                     {/* Payment status */}
                                                     <td className="whitespace-nowrap px-5 py-3.5">
@@ -963,11 +1026,11 @@ export default function PaymentLinksIndex({
                                                         >
                                                             {smsStatusLabels[link.sms_status]}
                                                         </span>
-                                                        {link.sms_sent_at && (
-                                                            <p className="mt-0.5 text-xs text-slate-400">
-                                                                {fmtDate(link.sms_sent_at)}
-                                                            </p>
-                                                        )}
+                                                    </td>
+
+                                                    {/* Sent Date */}
+                                                    <td className="whitespace-nowrap px-5 py-3.5 text-sm text-slate-500">
+                                                        {link.sms_sent_at ? fmtDate(link.sms_sent_at) : <span className="text-slate-300">—</span>}
                                                     </td>
 
                                                     {/* Actions */}

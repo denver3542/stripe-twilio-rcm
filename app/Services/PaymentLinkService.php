@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Client;
 use App\Models\ClientPayment;
 use App\Models\PaymentLink;
+use App\Models\PaymentLinkSmsLog;
 use App\Repositories\Contracts\PaymentLinkRepositoryInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -48,8 +49,11 @@ class PaymentLinkService
         }
     }
 
-    public function sendSms(PaymentLink $link): void
-    {
+    public function sendSms(
+        PaymentLink $link,
+        string $triggeredBy = 'manual',
+        ?string $batchId = null,
+    ): void {
         $client = $link->client;
         $phone  = $this->normalizePhone(
             $client->mobile_phone ?? $client->phone ?? ''
@@ -61,14 +65,52 @@ class PaymentLinkService
             . "Pay here: {$link->stripe_payment_link_url}. "
             . "Questions? Call (443) 249-2990. Thank you!";
 
+        $sentAt = Carbon::now();
+
+        if (! $phone) {
+            $this->paymentLinks->update($link, [
+                'sms_status'  => 'failed',
+                'sms_sent_at' => $sentAt,
+            ]);
+
+            PaymentLinkSmsLog::create([
+                'payment_link_id' => $link->id,
+                'client_id'       => $client->id,
+                'batch_id'        => $batchId,
+                'phone_number'    => null,
+                'sms_body'        => $body,
+                'status'          => 'skipped',
+                'error_message'   => 'Client has no phone number on file.',
+                'triggered_by'    => $triggeredBy,
+                'sent_at'         => $sentAt,
+            ]);
+
+            Log::warning("SMS skipped for PaymentLink #{$link->id}: no phone number.");
+            return;
+        }
+
         $result = $this->twilio->sendSms($phone, $body);
+        $status = $result['status'] === 'sent' ? 'sent' : 'failed';
 
         $this->paymentLinks->update($link, [
-            'sms_status' => $result['status'] === 'sent' ? 'sent' : 'failed',
-            'sms_sent_at' => Carbon::now(),
+            'sms_status'  => $status,
+            'sms_sent_at' => $sentAt,
         ]);
 
-        if ($result['status'] !== 'sent') {
+        PaymentLinkSmsLog::create([
+            'payment_link_id' => $link->id,
+            'client_id'       => $client->id,
+            'batch_id'        => $batchId,
+            'phone_number'    => $phone,
+            'sms_body'        => $body,
+            'status'          => $status,
+            'message_sid'     => $result['sid'] ?? null,
+            'error_message'   => $result['error'] ?? null,
+            'triggered_by'    => $triggeredBy,
+            'sent_at'         => $sentAt,
+        ]);
+
+        if ($status !== 'sent') {
             Log::warning("SMS failed for PaymentLink #{$link->id}: " . ($result['error'] ?? 'unknown error'));
         }
     }

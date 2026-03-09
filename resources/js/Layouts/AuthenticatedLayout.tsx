@@ -53,6 +53,12 @@ export default function Authenticated({
                                 >
                                     Payment Links
                                 </NavLink>
+                                <NavLink
+                                    href={route("rcm-logs.index")}
+                                    active={route().current("rcm-logs.index")}
+                                >
+                                    RCM Logs
+                                </NavLink>
                             </div>
                         </div>
 

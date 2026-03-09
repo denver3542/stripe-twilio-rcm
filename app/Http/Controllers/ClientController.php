@@ -64,12 +64,19 @@ class ClientController extends Controller
             }
         }
 
-        $query->orderByRaw("COALESCE(last_name, name, '') ASC")
-              ->orderByRaw("COALESCE(first_name, '') ASC");
+        $sortInput = $request->input('sort', 'name');
+        $dir       = $request->input('direction') === 'desc' ? 'desc' : 'asc';
+
+        match ($sortInput) {
+            'balance'    => $query->orderByRaw("CASE WHEN patient_balance > 0 THEN patient_balance ELSE outstanding_balance END {$dir}"),
+            'status'     => $query->orderBy('account_status', $dir),
+            'created_at' => $query->orderBy('created_at', $dir),
+            default      => $query->orderByRaw("COALESCE(last_name, name, '') {$dir}")->orderByRaw("COALESCE(first_name, '') {$dir}"),
+        };
 
         return Inertia::render('Clients/Index', [
             'clients'    => $query->withCount(['paymentLinks as pending_links_count' => fn ($q) => $q->where('payment_status', 'pending')])->paginate(20)->withQueryString(),
-            'filters'    => $request->only(['search', 'status', 'link_status', 'link_sms_status', 'amount_range']),
+            'filters'    => (object) array_filter($request->only(['search', 'status', 'link_status', 'link_sms_status', 'amount_range', 'sort', 'direction']), fn ($v) => $v !== null),
             'generating' => Cache::get('payment_links_generating'),
         ]);
     }

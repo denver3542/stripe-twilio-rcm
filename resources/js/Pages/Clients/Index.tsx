@@ -24,6 +24,42 @@ interface Filters {
     link_status?: string;
     link_sms_status?: string;
     amount_range?: string;
+    sort?: string;
+    direction?: string;
+}
+
+// ─── Sort header ──────────────────────────────────────────────────────────────
+
+function SortHeader({
+    label,
+    column,
+    sort,
+    direction,
+    onSort,
+    className = '',
+}: {
+    label: string;
+    column: string;
+    sort: string;
+    direction: string;
+    onSort: (col: string, dir: string) => void;
+    className?: string;
+}) {
+    const active  = sort === column;
+    const nextDir = active && direction === 'asc' ? 'desc' : 'asc';
+    return (
+        <th
+            className={`cursor-pointer select-none px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider transition-colors hover:text-slate-700 ${active ? 'text-brand-600' : 'text-slate-500'} ${className}`}
+            onClick={() => onSort(column, nextDir)}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                <span className={active ? 'text-brand-500' : 'text-slate-300'}>
+                    {active && direction === 'asc' ? '↑' : '↓'}
+                </span>
+            </span>
+        </th>
+    );
 }
 
 const AMOUNT_RANGES = [
@@ -75,6 +111,8 @@ export default function Index({
         (filters.link_sms_status as PaymentSmsStatus) ?? ''
     );
     const [amountRange, setAmountRange] = useState(filters.amount_range ?? '');
+    const [sort, setSort] = useState(filters.sort ?? 'name');
+    const [direction, setDirection] = useState(filters.direction ?? 'asc');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // ── Batch selection ───────────────────────────────────────────────────────
@@ -187,6 +225,8 @@ export default function Index({
         newLinkStatus: string,
         newLinkSmsStatus: string,
         newAmountRange: string,
+        newSort: string,
+        newDirection: string,
     ) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
@@ -198,6 +238,8 @@ export default function Index({
                     link_status:     newLinkStatus    || undefined,
                     link_sms_status: newLinkSmsStatus || undefined,
                     amount_range:    newAmountRange   || undefined,
+                    sort:            newSort !== 'name' ? newSort : undefined,
+                    direction:       newDirection !== 'asc' ? newDirection : undefined,
                 },
                 { preserveState: true, replace: true },
             );
@@ -206,27 +248,33 @@ export default function Index({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status, linkStatus, linkSmsStatus, amountRange);
+        applyFilters(value, status, linkStatus, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value, linkStatus, linkSmsStatus, amountRange);
+        applyFilters(search, value, linkStatus, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleLinkStatus(value: PaymentStatus | '') {
         setLinkStatus(value);
-        applyFilters(search, status, value, linkSmsStatus, amountRange);
+        applyFilters(search, status, value, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleLinkSmsStatus(value: PaymentSmsStatus | '') {
         setLinkSmsStatus(value);
-        applyFilters(search, status, linkStatus, value, amountRange);
+        applyFilters(search, status, linkStatus, value, amountRange, sort, direction);
     }
 
     function handleAmountRange(value: string) {
         setAmountRange(value);
-        applyFilters(search, status, linkStatus, linkSmsStatus, value);
+        applyFilters(search, status, linkStatus, linkSmsStatus, value, sort, direction);
+    }
+
+    function handleSort(col: string, dir: string) {
+        setSort(col);
+        setDirection(dir);
+        applyFilters(search, status, linkStatus, linkSmsStatus, amountRange, col, dir);
     }
 
     const hasActiveFilters = !!(search || status || linkStatus || linkSmsStatus || amountRange);
@@ -414,7 +462,7 @@ export default function Index({
                                         setSearch(''); setStatus('');
                                         setLinkStatus(''); setLinkSmsStatus('');
                                         setAmountRange('');
-                                        applyFilters('', '', '', '', '');
+                                        applyFilters('', '', '', '', '', sort, direction);
                                     }}
                                     className="text-xs text-slate-400 hover:text-slate-600"
                                 >
@@ -496,12 +544,12 @@ export default function Index({
                                                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                                                 />
                                             </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
+                                            <SortHeader label="Patient"  column="name"       sort={sort} direction={direction} onSort={handleSort} />
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">DOB</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Contact</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Location</th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Balance</th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                                            <SortHeader label="Balance" column="balance"    sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="Status"  column="status"     sort={sort} direction={direction} onSort={handleSort} />
                                             <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                                         </tr>
                                     </thead>

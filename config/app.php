@@ -67,6 +67,8 @@ return [
 
     'timezone' => 'UTC',
 
+    'display_timezone' => env('APP_TIMEZONE', 'America/New_York'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

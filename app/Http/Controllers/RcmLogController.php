@@ -11,7 +11,11 @@ class RcmLogController extends Controller
 {
     public function index(Request $request): Response
     {
-        $query = RcmUpdateLog::with('client')->latest();
+        $allowedSorts = ['created_at', 'event', 'status', 'http_status', 'patient_id'];
+        $sort = in_array($request->input('sort'), $allowedSorts) ? $request->input('sort') : 'created_at';
+        $dir  = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+
+        $query = RcmUpdateLog::with('client')->orderBy($sort, $dir);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -47,7 +51,7 @@ class RcmLogController extends Controller
         return Inertia::render('RcmLogs/Index', [
             'logs'    => $logs,
             'stats'   => $stats,
-            'filters' => $request->only(['status', 'event', 'from', 'to', 'patient_id']),
+            'filters' => (object) array_filter($request->only(['status', 'event', 'from', 'to', 'patient_id', 'sort', 'direction']), fn ($v) => $v !== null),
         ]);
     }
 }

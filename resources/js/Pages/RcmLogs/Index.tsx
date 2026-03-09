@@ -141,6 +141,40 @@ function DetailPanel({ log }: { log: RcmUpdateLog }) {
     );
 }
 
+// ─── Sort header ──────────────────────────────────────────────────────────────
+
+function SortHeader({
+    label,
+    column,
+    sort,
+    direction,
+    onSort,
+    className = "px-3 py-3",
+}: {
+    label: string;
+    column: string;
+    sort: string;
+    direction: string;
+    onSort: (col: string, dir: string) => void;
+    className?: string;
+}) {
+    const active  = sort === column;
+    const nextDir = active && direction === "asc" ? "desc" : "asc";
+    return (
+        <th
+            className={`cursor-pointer select-none text-left text-xs font-semibold uppercase tracking-wider transition-colors hover:text-slate-700 ${active ? "text-brand-600" : "text-slate-400"} ${className}`}
+            onClick={() => onSort(column, nextDir)}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                <span className={active ? "text-brand-500" : "text-slate-300"}>
+                    {active && direction === "asc" ? "↑" : "↓"}
+                </span>
+            </span>
+        </th>
+    );
+}
+
 // ─── Filters ──────────────────────────────────────────────────────────────────
 
 interface Filters {
@@ -149,6 +183,8 @@ interface Filters {
     from: string;
     to: string;
     patient_id: string;
+    sort?: string;
+    direction?: string;
 }
 
 function FilterBar({ filters }: { filters: Filters }) {
@@ -294,9 +330,29 @@ type Props = PageProps<{
 
 export default function RcmLogsIndex({ logs, stats, filters }: Props) {
     const [expanded, setExpanded] = useState<number | null>(null);
+    const [sort, setSort] = useState(filters.sort ?? "created_at");
+    const [direction, setDirection] = useState(filters.direction ?? "desc");
 
     function toggle(id: number) {
         setExpanded(prev => (prev === id ? null : id));
+    }
+
+    function handleSort(col: string, dir: string) {
+        setSort(col);
+        setDirection(dir);
+        router.get(
+            route("rcm-logs.index"),
+            {
+                ...(filters.status     ? { status:     filters.status }     : {}),
+                ...(filters.event      ? { event:      filters.event }      : {}),
+                ...(filters.from       ? { from:       filters.from }       : {}),
+                ...(filters.to         ? { to:         filters.to }         : {}),
+                ...(filters.patient_id ? { patient_id: filters.patient_id } : {}),
+                sort:      col !== "created_at" ? col : undefined,
+                direction: dir !== "desc"        ? dir : undefined,
+            },
+            { preserveState: true, replace: true },
+        );
     }
 
     return (
@@ -342,24 +398,14 @@ export default function RcmLogsIndex({ logs, stats, filters }: Props) {
                         <table className="min-w-full divide-y divide-slate-100">
                             <thead className="bg-slate-50">
                                 <tr>
-                                    <th className="py-3 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 sm:pl-6">
-                                        Time
-                                    </th>
-                                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                        Event
-                                    </th>
-                                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                        Patient
-                                    </th>
+                                    <SortHeader label="Time"    column="created_at"  sort={sort} direction={direction} onSort={handleSort} className="py-3 pl-4 pr-3 sm:pl-6" />
+                                    <SortHeader label="Event"   column="event"       sort={sort} direction={direction} onSort={handleSort} />
+                                    <SortHeader label="Patient" column="patient_id"  sort={sort} direction={direction} onSort={handleSort} />
                                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
                                         Client
                                     </th>
-                                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                        Status
-                                    </th>
-                                    <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
-                                        HTTP
-                                    </th>
+                                    <SortHeader label="Status"  column="status"      sort={sort} direction={direction} onSort={handleSort} />
+                                    <SortHeader label="HTTP"    column="http_status" sort={sort} direction={direction} onSort={handleSort} />
                                     <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">
                                         Error
                                     </th>
