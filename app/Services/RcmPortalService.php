@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\RcmUpdateLog;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -15,32 +16,52 @@ class RcmPortalService
 
     private function getToken(): ?string
     {
-        return Cache::remember(self::TOKEN_KEY, now()->addMinutes(self::TOKEN_TTL), function () {
+        if ($cached = Cache::get(self::TOKEN_KEY)) {
+            return $cached;
+        }
+
+        try {
             $response = Http::post(self::BASE_URL . '/auth/token', [
                 'username' => config('services.rcm_portal.username'),
                 'password' => config('services.rcm_portal.password'),
             ]);
+        } catch (ConnectionException $e) {
+            Log::error('RCM Portal: connection error fetching auth token', ['error' => $e->getMessage()]);
 
-            if (! $response->successful()) {
-                Log::error('RCM Portal: failed to obtain auth token', [
-                    'status' => $response->status(),
-                    'body'   => $response->body(),
-                ]);
+            RcmUpdateLog::create([
+                'event'         => 'auth_token_fetch',
+                'status'        => 'failed',
+                'triggered_by'  => 'system',
+                'error_message' => 'Connection error: ' . $e->getMessage(),
+            ]);
 
-                RcmUpdateLog::create([
-                    'event'         => 'auth_token_fetch',
-                    'status'        => 'failed',
-                    'triggered_by'  => 'system',
-                    'http_status'   => $response->status(),
-                    'response_body' => $response->body(),
-                    'error_message' => 'Failed to obtain auth token from RCM portal.',
-                ]);
+            return null;
+        }
 
-                return null;
-            }
+        if (! $response->successful()) {
+            Log::error('RCM Portal: failed to obtain auth token', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
 
-            return $response->json('access_token');
-        });
+            RcmUpdateLog::create([
+                'event'         => 'auth_token_fetch',
+                'status'        => 'failed',
+                'triggered_by'  => 'system',
+                'http_status'   => $response->status(),
+                'response_body' => $response->body(),
+                'error_message' => 'Failed to obtain auth token from RCM portal.',
+            ]);
+
+            return null;
+        }
+
+        $token = $response->json('access_token');
+
+        // Only cache on success so failures are retried immediately next time
+        Cache::put(self::TOKEN_KEY, $token, now()->addMinutes(self::TOKEN_TTL));
+
+        return $token;
     }
 
     public function updatePatientStatus(string $patientId, ?int $clientId = null, string $triggeredBy = 'webhook'): bool
@@ -60,11 +81,27 @@ class RcmPortalService
             return false;
         }
 
-        $payload  = ['patientID' => $patientId];
-        $response = Http::withToken($token)
-            ->post(self::BASE_URL . '/update-patient-status', $payload);
-
+        $payload = ['patientID' => $patientId];
         $retried = false;
+
+        try {
+            $response = Http::withToken($token)
+                ->post(self::BASE_URL . '/update-patient-status', $payload);
+        } catch (ConnectionException $e) {
+            Log::error('RCM Portal: connection error updating patient status', ['patientID' => $patientId, 'error' => $e->getMessage()]);
+
+            RcmUpdateLog::create([
+                'client_id'       => $clientId,
+                'patient_id'      => $patientId,
+                'event'           => 'patient_status_update',
+                'status'          => 'failed',
+                'triggered_by'    => $triggeredBy,
+                'request_payload' => $payload,
+                'error_message'   => 'Connection error: ' . $e->getMessage(),
+            ]);
+
+            return false;
+        }
 
         // Token may have expired early — clear cache and retry once
         if ($response->status() === 401) {
@@ -93,8 +130,27 @@ class RcmPortalService
                 return false;
             }
 
-            $response = Http::withToken($token)
-                ->post(self::BASE_URL . '/update-patient-status', $payload);
+            try {
+                $response = Http::withToken($token)
+                    ->post(self::BASE_URL . '/update-patient-status', $payload);
+            } catch (ConnectionException $e) {
+                Log::error('RCM Portal: connection error on retry', ['patientID' => $patientId, 'error' => $e->getMessage()]);
+
+                RcmUpdateLog::create([
+                    'client_id'       => $clientId,
+                    'patient_id'      => $patientId,
+                    'event'           => 'patient_status_update',
+                    'status'          => 'retried_failed',
+                    'triggered_by'    => $triggeredBy,
+                    'http_status'     => $firstStatus,
+                    'request_payload' => $payload,
+                    'response_body'   => $firstBody,
+                    'error_message'   => 'Connection error on retry: ' . $e->getMessage(),
+                    'retried'         => true,
+                ]);
+
+                return false;
+            }
 
             $retried = true;
         }
