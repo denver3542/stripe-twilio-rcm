@@ -222,6 +222,20 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                         </div>
                     </div>
                     <div className="flex shrink-0 gap-2">
+                        <Link
+                            href={route('clients.toggle-payment-link-exclusion', client.id)}
+                            method="patch"
+                            as="button"
+                            preserveScroll
+                            className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-semibold uppercase tracking-widest shadow-sm transition ${
+                                client.exclude_from_payment_links
+                                    ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                            }`}
+                            title={client.exclude_from_payment_links ? 'Click to re-include in payment link sending' : 'Click to exclude from payment link sending'}
+                        >
+                            {client.exclude_from_payment_links ? 'Excluded from Links' : 'Exclude from Links'}
+                        </Link>
                         <Link href={route('clients.edit', client.id)}
                             className="inline-flex items-center rounded-md border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-widest text-slate-700 shadow-sm transition hover:bg-slate-50">
                             Edit
@@ -529,7 +543,7 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                                                         href={link.stripe_payment_link_url}
                                                                         target="_blank"
                                                                         rel="noreferrer"
-                                                                        className="inline-flex items-center gap-1 rounded-md bg-stripe px-2.5 py-1 text-xs font-medium text-white transition hover:opacity-90"
+                                                                        className="inline-flex items-center gap-1 text-xs font-medium text-stripe transition hover:opacity-70"
                                                                     >
                                                                         Click here →
                                                                     </a>
@@ -538,14 +552,23 @@ export default function Show({ client }: PageProps<{ client: ShowClient }>) {
                                                             <td className="whitespace-nowrap py-2.5">
                                                                 <div className="flex items-center gap-2">
                                                                     {link.payment_status === 'pending' && link.sms_status !== 'sent' && (
-                                                                        <Link
-                                                                            href={route('payment-links.send-sms', link.id)}
-                                                                            method="post"
-                                                                            as="button"
-                                                                            className="text-xs font-medium text-brand-700 hover:text-brand-900"
-                                                                        >
-                                                                            Send SMS
-                                                                        </Link>
+                                                                        client.exclude_from_payment_links ? (
+                                                                            <span
+                                                                                className="cursor-not-allowed text-xs font-medium text-slate-300"
+                                                                                title="Client is excluded from payment link sending"
+                                                                            >
+                                                                                Send SMS
+                                                                            </span>
+                                                                        ) : (
+                                                                            <Link
+                                                                                href={route('payment-links.send-sms', link.id)}
+                                                                                method="post"
+                                                                                as="button"
+                                                                                className="text-xs font-medium text-brand-700 hover:text-brand-900"
+                                                                            >
+                                                                                Send SMS
+                                                                            </Link>
+                                                                        )
                                                                     )}
                                                                     <Link
                                                                         href={route('payment-links.destroy', link.id)}

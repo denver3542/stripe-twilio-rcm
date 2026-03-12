@@ -24,14 +24,50 @@ interface Filters {
     link_status?: string;
     link_sms_status?: string;
     amount_range?: string;
+    sort?: string;
+    direction?: string;
+}
+
+// ─── Sort header ──────────────────────────────────────────────────────────────
+
+function SortHeader({
+    label,
+    column,
+    sort,
+    direction,
+    onSort,
+    className = '',
+}: {
+    label: string;
+    column: string;
+    sort: string;
+    direction: string;
+    onSort: (col: string, dir: string) => void;
+    className?: string;
+}) {
+    const active  = sort === column;
+    const nextDir = active && direction === 'asc' ? 'desc' : 'asc';
+    return (
+        <th
+            className={`cursor-pointer select-none px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider transition-colors hover:text-slate-700 ${active ? 'text-brand-600' : 'text-slate-500'} ${className}`}
+            onClick={() => onSort(column, nextDir)}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                <span className={active ? 'text-brand-500' : 'text-slate-300'}>
+                    {active && direction === 'asc' ? '↑' : '↓'}
+                </span>
+            </span>
+        </th>
+    );
 }
 
 const AMOUNT_RANGES = [
     { value: '',        label: 'All Amounts' },
-    { value: '0-150',   label: '$0 – $150'   },
-    { value: '151-300', label: '$151 – $300'  },
-    { value: '301-500', label: '$301 – $500'  },
-    { value: '501+',    label: '$501+'        },
+    { value: '0-100',   label: '$0 – $100'   },
+    { value: '101-200', label: '$101 – $200'  },
+    { value: '201-300', label: '$201 – $300'  },
+    { value: '301+',    label: '$301+'        },
 ] as const;
 
 function displayName(client: Client): string {
@@ -75,6 +111,8 @@ export default function Index({
         (filters.link_sms_status as PaymentSmsStatus) ?? ''
     );
     const [amountRange, setAmountRange] = useState(filters.amount_range ?? '');
+    const [sort, setSort] = useState(filters.sort ?? 'name');
+    const [direction, setDirection] = useState(filters.direction ?? 'asc');
     const searchTimer = useRef<ReturnType<typeof setTimeout>>();
 
     // ── Batch selection ───────────────────────────────────────────────────────
@@ -187,6 +225,8 @@ export default function Index({
         newLinkStatus: string,
         newLinkSmsStatus: string,
         newAmountRange: string,
+        newSort: string,
+        newDirection: string,
     ) {
         clearTimeout(searchTimer.current);
         searchTimer.current = setTimeout(() => {
@@ -198,6 +238,8 @@ export default function Index({
                     link_status:     newLinkStatus    || undefined,
                     link_sms_status: newLinkSmsStatus || undefined,
                     amount_range:    newAmountRange   || undefined,
+                    sort:            newSort !== 'name' ? newSort : undefined,
+                    direction:       newDirection !== 'asc' ? newDirection : undefined,
                 },
                 { preserveState: true, replace: true },
             );
@@ -206,27 +248,33 @@ export default function Index({
 
     function handleSearch(value: string) {
         setSearch(value);
-        applyFilters(value, status, linkStatus, linkSmsStatus, amountRange);
+        applyFilters(value, status, linkStatus, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleStatus(value: string) {
         setStatus(value);
-        applyFilters(search, value, linkStatus, linkSmsStatus, amountRange);
+        applyFilters(search, value, linkStatus, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleLinkStatus(value: PaymentStatus | '') {
         setLinkStatus(value);
-        applyFilters(search, status, value, linkSmsStatus, amountRange);
+        applyFilters(search, status, value, linkSmsStatus, amountRange, sort, direction);
     }
 
     function handleLinkSmsStatus(value: PaymentSmsStatus | '') {
         setLinkSmsStatus(value);
-        applyFilters(search, status, linkStatus, value, amountRange);
+        applyFilters(search, status, linkStatus, value, amountRange, sort, direction);
     }
 
     function handleAmountRange(value: string) {
         setAmountRange(value);
-        applyFilters(search, status, linkStatus, linkSmsStatus, value);
+        applyFilters(search, status, linkStatus, linkSmsStatus, value, sort, direction);
+    }
+
+    function handleSort(col: string, dir: string) {
+        setSort(col);
+        setDirection(dir);
+        applyFilters(search, status, linkStatus, linkSmsStatus, amountRange, col, dir);
     }
 
     const hasActiveFilters = !!(search || status || linkStatus || linkSmsStatus || amountRange);
@@ -414,7 +462,7 @@ export default function Index({
                                         setSearch(''); setStatus('');
                                         setLinkStatus(''); setLinkSmsStatus('');
                                         setAmountRange('');
-                                        applyFilters('', '', '', '', '');
+                                        applyFilters('', '', '', '', '', sort, direction);
                                     }}
                                     className="text-xs text-slate-400 hover:text-slate-600"
                                 >
@@ -496,12 +544,12 @@ export default function Index({
                                                     className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                                                 />
                                             </th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
+                                            <SortHeader label="Patient"  column="name"       sort={sort} direction={direction} onSort={handleSort} />
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">DOB</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Contact</th>
                                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Location</th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Balance</th>
-                                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                                            <SortHeader label="Balance" column="balance"    sort={sort} direction={direction} onSort={handleSort} />
+                                            <SortHeader label="Status"  column="status"     sort={sort} direction={direction} onSort={handleSort} />
                                             <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                                         </tr>
                                     </thead>
@@ -510,7 +558,7 @@ export default function Index({
                                             const balance = Number(client.patient_balance) || Number(client.outstanding_balance);
                                             const isSelected = selectedIds.has(client.id);
                                             return (
-                                                <tr key={client.id} className={`transition-colors ${isSelected ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}>
+                                                <tr key={client.id} className={`transition-colors ${client.exclude_from_payment_links ? 'bg-slate-50 opacity-70' : isSelected ? 'bg-brand-50/40' : 'hover:bg-slate-50'}`}>
                                                     {/* Checkbox */}
                                                     <td className="w-10 px-4 py-3.5">
                                                         <input
@@ -595,31 +643,82 @@ export default function Index({
                                                     </td>
 
                                                     {/* Status */}
-                                                    <td className="whitespace-nowrap px-5 py-3.5">
-                                                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[client.account_status]}`}>
-                                                            {statusLabels[client.account_status]}
-                                                        </span>
+                                                    <td className="px-5 py-3.5">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[client.account_status]}`}>
+                                                                {statusLabels[client.account_status]}
+                                                            </span>
+                                                            {client.exclude_from_payment_links && (
+                                                                <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                                                                    <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                    </svg>
+                                                                    Link Excluded
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
 
                                                     {/* Actions */}
                                                     <td className="whitespace-nowrap px-5 py-3.5 text-right text-sm">
-                                                        <div className="flex items-center justify-end gap-3">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {/* View */}
                                                             <Link href={route('clients.show', client.id)}
-                                                                  className="text-slate-400 hover:text-brand-700">View</Link>
+                                                                  title="View client"
+                                                                  className="text-slate-400 hover:text-brand-700">
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                </svg>
+                                                            </Link>
+                                                            {/* Edit */}
                                                             <Link href={route('clients.edit', client.id)}
-                                                                  className="text-slate-400 hover:text-brand-700">Edit</Link>
+                                                                  title="Edit client"
+                                                                  className="text-slate-400 hover:text-brand-700">
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                                </svg>
+                                                            </Link>
+                                                            {/* SMS to alternate number */}
                                                             <button
                                                                 onClick={() => openAltModal(client)}
-                                                                className="text-slate-400 hover:text-brand-700"
                                                                 title="Send payment link to alternate number"
+                                                                className="text-slate-400 hover:text-brand-700"
                                                             >
-                                                                SMS
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
+                                                                </svg>
                                                             </button>
+                                                            {/* Exclude / Include */}
+                                                            <Link
+                                                                href={route('clients.toggle-payment-link-exclusion', client.id)}
+                                                                method="patch"
+                                                                as="button"
+                                                                preserveScroll
+                                                                title={client.exclude_from_payment_links ? 'Include in batch sending' : 'Exclude from batch sending'}
+                                                                className={client.exclude_from_payment_links ? "text-amber-500 hover:text-amber-700" : "text-slate-400 hover:text-amber-500"}
+                                                            >
+                                                                {client.exclude_from_payment_links ? (
+                                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                                                                    </svg>
+                                                                )}
+                                                            </Link>
+                                                            {/* Delete */}
                                                             <button
                                                                 onClick={() => handleDelete(client)}
                                                                 disabled={processing}
+                                                                title="Delete client"
                                                                 className="text-slate-400 hover:text-red-600 disabled:opacity-50"
-                                                            >Delete</button>
+                                                            >
+                                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>

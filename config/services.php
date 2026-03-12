@@ -44,4 +44,9 @@ return [
         'override_to' => env('SMS_OVERRIDE_TO'),
     ],
 
+    'rcm_portal' => [
+        'username' => env('RCM_PORTAL_USERNAME'),
+        'password' => env('RCM_PORTAL_PASSWORD'),
+    ],
+
 ];

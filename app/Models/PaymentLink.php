@@ -31,6 +31,13 @@ class PaymentLink extends Model
         ];
     }
 
+    protected function serializeDate(\DateTimeInterface $date): string
+    {
+        return \Carbon\Carbon::instance($date)
+            ->setTimezone(config('app.display_timezone'))
+            ->toIso8601String();
+    }
+
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);

@@ -13,6 +13,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class BatchSendPaymentLinkSmsJob implements ShouldQueue
 {
@@ -38,9 +39,11 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
             ->whereIn('id', $this->linkIds)
             ->where('payment_status', 'pending')
             ->where('sms_status', 'not_sent')
+            ->whereHas('client', fn ($q) => $q->where('exclude_from_payment_links', false))
             ->get();
 
-        $total = $links->count();
+        $total   = $links->count();
+        $batchId = Str::uuid()->toString();
 
         Cache::put($cacheKey, [
             'total'      => $total,
@@ -57,7 +60,7 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
 
         foreach ($links as $link) {
             try {
-                $paymentLinkService->sendSms($link);
+                $paymentLinkService->sendSms($link, 'batch', $batchId);
             } catch (\Throwable $e) {
                 Log::warning("BatchSendPaymentLinkSmsJob: link #{$link->id} — " . $e->getMessage());
             }

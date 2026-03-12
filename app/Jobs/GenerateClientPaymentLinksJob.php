@@ -43,6 +43,7 @@ class GenerateClientPaymentLinksJob implements ShouldQueue
         $eligibleClients = Client::where('company_id', $this->companyId)
             ->whereIn('id', $this->clientIds)
             ->whereNotIn('id', $clientsWithPendingLink)
+            ->where('exclude_from_payment_links', false)
             ->where(function ($q) {
                 $q->where('patient_balance', '>=', 0.50)
                   ->orWhere('outstanding_balance', '>=', 0.50);
