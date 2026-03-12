@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PaymentLink extends Model
 {
     protected $fillable = [
+        'company_id',
         'client_id',
         'stripe_payment_link_url',
         'short_url',
@@ -32,5 +34,15 @@ class PaymentLink extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function scopeForCompany(Builder $query, int $companyId): Builder
+    {
+        return $query->where('payment_links.company_id', $companyId);
     }
 }

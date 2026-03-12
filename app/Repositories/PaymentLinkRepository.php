@@ -24,6 +24,7 @@ class PaymentLinkRepository implements PaymentLinkRepositoryInterface
         return $link->delete();
     }
 
+    /** Unscoped — webhook already verified company via URL slug before calling this. */
     public function findByStripeId(string $stripePaymentLinkId): ?PaymentLink
     {
         return PaymentLink::where('stripe_payment_link_id', $stripePaymentLinkId)->first();
@@ -36,15 +37,17 @@ class PaymentLinkRepository implements PaymentLinkRepositoryInterface
             ->get();
     }
 
-    public function totalOutstanding(): float
+    public function totalOutstanding(int $companyId): float
     {
-        return (float) PaymentLink::where('payment_status', 'pending')
+        return (float) PaymentLink::where('company_id', $companyId)
+            ->where('payment_status', 'pending')
             ->sum('amount');
     }
 
-    public function totalPaidThisMonth(): float
+    public function totalPaidThisMonth(int $companyId): float
     {
-        return (float) PaymentLink::where('payment_status', 'paid')
+        return (float) PaymentLink::where('company_id', $companyId)
+            ->where('payment_status', 'paid')
             ->whereBetween('paid_at', [
                 Carbon::now()->startOfMonth(),
                 Carbon::now()->endOfMonth(),
@@ -52,17 +55,20 @@ class PaymentLinkRepository implements PaymentLinkRepositoryInterface
             ->sum('amount');
     }
 
-    public function recentPaid(int $limit): Collection
+    public function recentPaid(int $limit, int $companyId): Collection
     {
         return PaymentLink::with('client')
+            ->where('company_id', $companyId)
             ->where('payment_status', 'paid')
             ->orderByDesc('paid_at')
             ->limit($limit)
             ->get();
     }
 
-    public function pendingCount(): int
+    public function pendingCount(int $companyId): int
     {
-        return PaymentLink::where('payment_status', 'pending')->count();
+        return PaymentLink::where('company_id', $companyId)
+            ->where('payment_status', 'pending')
+            ->count();
     }
 }

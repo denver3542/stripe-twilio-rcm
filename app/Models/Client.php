@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Client extends Model
@@ -11,6 +13,9 @@ class Client extends Model
     use HasFactory;
 
     protected $fillable = [
+        // Multi-tenant
+        'company_id',
+
         // Original fields
         'name',
         'contact_name',
@@ -108,5 +113,15 @@ class Client extends Model
     public function clientPayments(): HasMany
     {
         return $this->hasMany(ClientPayment::class)->orderByDesc('paid_at');
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+
+    public function scopeForCompany(Builder $query, int $companyId): Builder
+    {
+        return $query->where('clients.company_id', $companyId);
     }
 }

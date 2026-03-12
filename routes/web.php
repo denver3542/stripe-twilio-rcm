@@ -1,7 +1,11 @@
 <?php
 
+use App\Http\Controllers\Admin\CompanyController;
+use App\Http\Controllers\Admin\CompanyUserController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ClientImportController;
+use App\Http\Controllers\CompanySwitchController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaymentLinkController;
 use App\Http\Controllers\ProfileController;
@@ -23,10 +27,15 @@ Route::get('/dashboard', [DashboardController::class, 'index'])
     ->name('dashboard');
 
 Route::middleware('auth')->group(function () {
+    // ── Company switcher (all authenticated users) ─────────────────────────
+    Route::post('company/switch', CompanySwitchController::class)->name('company.switch');
+
+    // ── Profile ────────────────────────────────────────────────────────────
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
+    // ── Clients ────────────────────────────────────────────────────────────
     Route::get('clients/import', [ClientImportController::class, 'show'])->name('clients.import');
     Route::post('clients/import', [ClientImportController::class, 'store'])->name('clients.import.store');
     Route::get('clients/generation-progress', [ClientImportController::class, 'generationProgress'])->name('clients.generation-progress');
@@ -36,16 +45,26 @@ Route::middleware('auth')->group(function () {
     Route::post('clients/{client}/send-to-phone', [ClientController::class, 'sendToPhone'])->name('clients.send-to-phone');
     Route::resource('clients', ClientController::class);
 
+    // ── Payment Links ──────────────────────────────────────────────────────
     Route::get('payment-links', [PaymentLinkController::class, 'index'])->name('payment-links.index');
     Route::post('payment-links/batch-send-sms', [PaymentLinkController::class, 'batchSendSms'])->name('payment-links.batch-send-sms');
     Route::post('payment-links/fetch-all-statuses', [PaymentLinkController::class, 'fetchAllStatuses'])->name('payment-links.fetch-all-statuses');
-    Route::post('clients/{client}/payment-links', [PaymentLinkController::class, 'store'])
-        ->name('payment-links.store');
-    Route::post('payment-links/{paymentLink}/send-sms', [PaymentLinkController::class, 'sendSms'])
-        ->name('payment-links.send-sms');
+    Route::post('clients/{client}/payment-links', [PaymentLinkController::class, 'store'])->name('payment-links.store');
+    Route::post('payment-links/{paymentLink}/send-sms', [PaymentLinkController::class, 'sendSms'])->name('payment-links.send-sms');
     Route::post('payment-links/{paymentLink}/fetch-status', [PaymentLinkController::class, 'fetchStatus'])->name('payment-links.fetch-status');
-    Route::delete('payment-links/{paymentLink}', [PaymentLinkController::class, 'destroy'])
-        ->name('payment-links.destroy');
+    Route::delete('payment-links/{paymentLink}', [PaymentLinkController::class, 'destroy'])->name('payment-links.destroy');
+
+    // ── RCM Logs ───────────────────────────────────────────────────────────
+    Route::get('rcm-logs', [RcmLogController::class, 'index'])->name('rcm-logs.index');
+
+    // ── Admin (admin middleware required) ──────────────────────────────────
+    Route::middleware('admin')->prefix('admin')->name('admin.')->group(function () {
+        Route::resource('companies', CompanyController::class)->except(['show']);
+        Route::get('users', [UserController::class, 'index'])->name('users.index');
+        Route::patch('users/{user}/toggle-admin', [UserController::class, 'toggleAdmin'])->name('users.toggle-admin');
+        Route::post('users/{user}/companies/{company}/attach', [CompanyUserController::class, 'attach'])->name('users.companies.attach');
+        Route::delete('users/{user}/companies/{company}/detach', [CompanyUserController::class, 'detach'])->name('users.companies.detach');
+    });
 });
 
 require __DIR__.'/auth.php';

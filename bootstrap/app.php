@@ -14,11 +14,16 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
             \App\Http\Middleware\HandleInertiaRequests::class,
+            \App\Http\Middleware\SetActiveCompanyMiddleware::class,
             \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\EnsureAdminMiddleware::class,
+        ]);
+
         $middleware->validateCsrfTokens(except: [
-            'api/webhooks/stripe',
+            'api/webhooks/stripe/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

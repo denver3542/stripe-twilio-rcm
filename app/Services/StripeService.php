@@ -12,10 +12,12 @@ use Stripe\Webhook;
 class StripeService
 {
     private readonly StripeClient $stripe;
+    private readonly string $webhookSecret;
 
-    public function __construct()
+    public function __construct(string $apiKey, string $webhookSecret)
     {
-        $this->stripe = new StripeClient(config('services.stripe.key'));
+        $this->stripe        = new StripeClient($apiKey);
+        $this->webhookSecret = $webhookSecret;
     }
 
     public function createPaymentLink(Client $client, int $amountCents, ?string $description = null): PaymentLink
@@ -55,10 +57,6 @@ class StripeService
      */
     public function constructWebhookEvent(string $payload, string $signature): Event
     {
-        return Webhook::constructEvent(
-            $payload,
-            $signature,
-            config('services.stripe.webhook_secret')
-        );
+        return Webhook::constructEvent($payload, $signature, $this->webhookSecret);
     }
 }

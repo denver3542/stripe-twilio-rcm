@@ -1,6 +1,6 @@
 import AuthenticatedLayout from "@/Layouts/AuthenticatedLayout";
 import { PageProps } from "@/types";
-import { Head, Link, useForm } from "@inertiajs/react";
+import { Head, Link, useForm, usePage } from "@inertiajs/react";
 import { useEffect, useRef, useState } from "react";
 
 interface ImportResult {
@@ -23,6 +23,9 @@ export default function Import({
     importResult?: ImportResult;
     generating?: GeneratingStatus | null;
 }>) {
+    const { auth, activeCompany, availableCompanies } = usePage<PageProps>().props;
+    const showCompanySelector = auth.is_admin || availableCompanies.length > 1;
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [generating, setGenerating] = useState<GeneratingStatus | null>(
         initialGenerating ?? null,
@@ -31,8 +34,10 @@ export default function Import({
 
     const { data, setData, post, processing, errors, reset } = useForm<{
         file: File | null;
+        company_id: number | '';
     }>({
         file: null,
+        company_id: activeCompany?.id ?? '',
     });
 
     // Sync from server props when they change (e.g. after import submit)
@@ -269,6 +274,42 @@ export default function Import({
                         </div>
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                            {/* Company selector (admins or multi-company users) */}
+                            {showCompanySelector && (
+                                <div>
+                                    <label
+                                        htmlFor="company_id"
+                                        className="block text-sm font-medium text-slate-700"
+                                    >
+                                        Import into Company
+                                    </label>
+                                    <select
+                                        id="company_id"
+                                        value={data.company_id}
+                                        onChange={(e) =>
+                                            setData(
+                                                'company_id',
+                                                e.target.value ? parseInt(e.target.value) : '',
+                                            )
+                                        }
+                                        className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                        required
+                                    >
+                                        <option value="">Select company…</option>
+                                        {availableCompanies.map((co) => (
+                                            <option key={co.id} value={co.id}>
+                                                {co.name}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    {errors.company_id && (
+                                        <p className="mt-1 text-sm text-red-600">
+                                            {errors.company_id}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Drop zone */}
                             <label
                                 htmlFor="file-input"

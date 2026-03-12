@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\Company;
 use App\Models\PaymentLink;
+use App\Services\CompanyContext;
 use App\Services\PaymentLinkService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -18,9 +20,17 @@ class FetchAllPaymentStatusesJob implements ShouldQueue
     public int $tries   = 1;
     public int $timeout = 600;
 
-    public function handle(PaymentLinkService $paymentLinkService): void
+    public function __construct(
+        private readonly int $companyId,
+    ) {}
+
+    public function handle(PaymentLinkService $paymentLinkService, CompanyContext $companyContext): void
     {
-        $links = PaymentLink::where('payment_status', 'pending')
+        $company = Company::findOrFail($this->companyId);
+        $companyContext->set($company);
+
+        $links = PaymentLink::where('company_id', $this->companyId)
+            ->where('payment_status', 'pending')
             ->whereNotNull('stripe_payment_link_id')
             ->get();
 
@@ -33,10 +43,9 @@ class FetchAllPaymentStatusesJob implements ShouldQueue
             if ($result['status'] === 'paid')    $paid++;
             if ($result['status'] === 'expired') $expired++;
 
-            // Small delay to stay well within Stripe's rate limits (100 req/s)
-            usleep(100_000); // 0.1s
+            usleep(100_000); // 0.1s — stay within Stripe's rate limits
         }
 
-        Log::info("FetchAllPaymentStatusesJob: checked {$links->count()} links — {$paid} paid, {$expired} expired");
+        Log::info("FetchAllPaymentStatusesJob [company #{$this->companyId}]: checked {$links->count()} links — {$paid} paid, {$expired} expired");
     }
 }

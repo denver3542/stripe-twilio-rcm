@@ -3,6 +3,26 @@ export interface User {
     name: string;
     email: string;
     email_verified_at?: string;
+    is_admin: boolean;
+}
+
+export interface Company {
+    id: number;
+    name: string;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    website: string | null;
+    stripe_config_key: string;
+    twilio_config_key: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CompanySummary {
+    id: number;
+    name: string;
 }
 
 export type PageProps<
@@ -10,11 +30,14 @@ export type PageProps<
 > = T & {
     auth: {
         user: User;
+        is_admin: boolean;
     };
     flash: {
         success?: string | null;
         error?: string | null;
     };
+    activeCompany: CompanySummary | null;
+    availableCompanies: CompanySummary[];
 };
 
 export type AccountStatus     = 'active' | 'inactive' | 'pending' | 'paid';
@@ -68,6 +91,7 @@ export interface Encounter {
 
 export interface Client {
     id: number;
+    company_id: number;
     external_patient_id: string | null;
 
     // Core (nullable for imported patients)
@@ -140,6 +164,7 @@ export interface Client {
 
 export interface ClientPayment {
     id: number;
+    company_id: number;
     client_id: number;
     amount_paid: number;
     stripe_session_id: string;
@@ -151,6 +176,7 @@ export interface ClientPayment {
 
 export interface PaymentLink {
     id: number;
+    company_id: number;
     client_id: number;
     stripe_payment_link_url: string | null;
     short_url: string | null;

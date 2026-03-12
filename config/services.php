@@ -35,15 +35,12 @@ return [
         ],
     ],
 
-    'stripe' => [
-        'key'            => env('STRIPE_KEY'),
-        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
-    ],
+    // Per-company Stripe and Twilio credentials are resolved at runtime by
+    // App\Support\CompanyCredentials using prefixed .env keys.
+    // Do NOT use php artisan config:cache — env() is called at runtime.
 
     'twilio' => [
-        'sid'         => env('TWILIO_SID'),
-        'token'       => env('TWILIO_TOKEN'),
-        'from'        => env('TWILIO_FROM'),
+        // Global override for SMS recipient (used across all companies for testing)
         'override_to' => env('SMS_OVERRIDE_TO'),
     ],
 

@@ -14,18 +14,29 @@ class PaymentLinkService
 {
     public function __construct(
         private readonly PaymentLinkRepositoryInterface $paymentLinks,
-        private readonly StripeService $stripe,
-        private readonly TwilioService $twilio,
+        private readonly CompanyServiceFactory $factory,
+        private readonly CompanyContext $companyContext,
     ) {}
+
+    private function stripe(): StripeService
+    {
+        return $this->factory->makeStripe($this->companyContext->get());
+    }
+
+    private function twilio(): TwilioService
+    {
+        return $this->factory->makeTwilio($this->companyContext->get());
+    }
 
     public function store(Client $client, array $validated): PaymentLink
     {
         $amountCents = (int) round((float) $validated['amount'] * 100);
         $description = $validated['description'] ?? null;
 
-        $stripeLink = $this->stripe->createPaymentLink($client, $amountCents, $description);
+        $stripeLink = $this->stripe()->createPaymentLink($client, $amountCents, $description);
 
         return $this->paymentLinks->create([
+            'company_id'              => $this->companyContext->getId(),
             'client_id'               => $client->id,
             'stripe_payment_link_url' => $stripeLink->url,
             'stripe_payment_link_id'  => $stripeLink->id,
@@ -55,20 +66,63 @@ class PaymentLinkService
             $client->mobile_phone ?? $client->phone ?? ''
         );
 
-        $firstName = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
+        $firstName   = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
+        $companyName = $this->companyContext->getName();
+        $companyPhone = $this->companyContext->get()->phone ?? '';
 
-        $body = "True Sport PT: Hi {$firstName}, you have a \${$link->amount} balance due. "
+        $body = "{$companyName}: Hi {$firstName}, you have a \${$link->amount} balance due. "
             . "Pay here: {$link->stripe_payment_link_url}. "
-            . "Questions? Call (443) 249-2990. Thank you!";
+            . ($companyPhone ? "Questions? Call {$companyPhone}. " : '')
+            . "Thank you!";
 
-        $result = $this->twilio->sendSms($phone, $body);
+        $sentAt = Carbon::now();
+
+        if (! $phone) {
+            $this->paymentLinks->update($link, [
+                'sms_status'  => 'failed',
+                'sms_sent_at' => $sentAt,
+            ]);
+
+            PaymentLinkSmsLog::create([
+                'company_id'      => $this->companyContext->getId(),
+                'payment_link_id' => $link->id,
+                'client_id'       => $client->id,
+                'batch_id'        => $batchId,
+                'phone_number'    => null,
+                'sms_body'        => $body,
+                'status'          => 'skipped',
+                'error_message'   => 'Client has no phone number on file.',
+                'triggered_by'    => $triggeredBy,
+                'sent_at'         => $sentAt,
+            ]);
+
+            Log::warning("SMS skipped for PaymentLink #{$link->id}: no phone number.");
+            return;
+        }
+
+        $result = $this->twilio()->sendSms($phone, $body);
+        $status = $result['status'] === 'sent' ? 'sent' : 'failed';
 
         $this->paymentLinks->update($link, [
             'sms_status' => $result['status'] === 'sent' ? 'sent' : 'failed',
             'sms_sent_at' => Carbon::now(),
         ]);
 
-        if ($result['status'] !== 'sent') {
+        PaymentLinkSmsLog::create([
+            'company_id'      => $this->companyContext->getId(),
+            'payment_link_id' => $link->id,
+            'client_id'       => $client->id,
+            'batch_id'        => $batchId,
+            'phone_number'    => $phone,
+            'sms_body'        => $body,
+            'status'          => $status,
+            'message_sid'     => $result['sid'] ?? null,
+            'error_message'   => $result['error'] ?? null,
+            'triggered_by'    => $triggeredBy,
+            'sent_at'         => $sentAt,
+        ]);
+
+        if ($status !== 'sent') {
             Log::warning("SMS failed for PaymentLink #{$link->id}: " . ($result['error'] ?? 'unknown error'));
         }
     }
@@ -89,7 +143,7 @@ class PaymentLinkService
         }
 
         try {
-            $sessions = $this->stripe->getCheckoutSessionsForPaymentLink($link->stripe_payment_link_id);
+            $sessions = $this->stripe()->getCheckoutSessionsForPaymentLink($link->stripe_payment_link_id);
         } catch (\Throwable $e) {
             Log::error("fetchStatus: Stripe API error for link #{$link->id}: " . $e->getMessage());
             return ['status' => 'error', 'message' => 'Stripe API error: ' . $e->getMessage()];
@@ -108,7 +162,6 @@ class PaymentLinkService
             }
         }
 
-        // If any session has status=expired and no paid session was found
         foreach ($sessions as $session) {
             if ($session->status === 'expired') {
                 $this->paymentLinks->update($link, ['payment_status' => 'expired']);
@@ -121,7 +174,6 @@ class PaymentLinkService
 
     private function maybeRecordClientPayment(PaymentLink $link, object $session): void
     {
-        // Guard against duplicate records
         if (ClientPayment::where('stripe_session_id', $session->id)->exists()) {
             return;
         }
@@ -133,9 +185,11 @@ class PaymentLinkService
 
         $amountPaid = $session->amount_total / 100;
         $paidAt     = Carbon::createFromTimestamp($session->created);
+        $companyId  = $this->companyContext->getId();
 
-        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt) {
+        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt, $companyId) {
             ClientPayment::create([
+                'company_id'             => $companyId,
                 'client_id'              => $client->id,
                 'amount_paid'            => $amountPaid,
                 'stripe_session_id'      => $session->id,
@@ -152,7 +206,6 @@ class PaymentLinkService
                 $client->update(['outstanding_balance' => max(0, $outstandingBal - $amountPaid)]);
             }
 
-            // Refresh to get updated balances, then mark account as paid if fully cleared
             $client->refresh();
             if ((float) $client->patient_balance <= 0 && (float) $client->outstanding_balance <= 0) {
                 $client->update(['account_status' => 'paid']);
@@ -170,11 +223,13 @@ class PaymentLinkService
 
     public function dashboardStats(): array
     {
+        $companyId = $this->companyContext->getId();
+
         return [
-            'total_outstanding'      => $this->paymentLinks->totalOutstanding(),
-            'total_paid_this_month'  => $this->paymentLinks->totalPaidThisMonth(),
-            'recent_paid'            => $this->paymentLinks->recentPaid(5),
-            'pending_count'          => $this->paymentLinks->pendingCount(),
+            'total_outstanding'     => $this->paymentLinks->totalOutstanding($companyId),
+            'total_paid_this_month' => $this->paymentLinks->totalPaidThisMonth($companyId),
+            'recent_paid'           => $this->paymentLinks->recentPaid(5, $companyId),
+            'pending_count'         => $this->paymentLinks->pendingCount($companyId),
         ];
     }
 

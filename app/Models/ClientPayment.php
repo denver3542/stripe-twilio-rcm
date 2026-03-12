@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ClientPayment extends Model
 {
     protected $fillable = [
+        'company_id',
         'client_id',
         'amount_paid',
         'stripe_session_id',
@@ -26,5 +27,10 @@ class ClientPayment extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
     }
 }

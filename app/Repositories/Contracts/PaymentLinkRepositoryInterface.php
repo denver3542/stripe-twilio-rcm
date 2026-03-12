@@ -13,15 +13,16 @@ interface PaymentLinkRepositoryInterface
 
     public function delete(PaymentLink $link): bool;
 
+    /** Unscoped — webhook already verified company via URL slug before calling this. */
     public function findByStripeId(string $stripePaymentLinkId): ?PaymentLink;
 
     public function forClient(int $clientId): Collection;
 
-    public function totalOutstanding(): float;
+    public function totalOutstanding(int $companyId): float;
 
-    public function totalPaidThisMonth(): float;
+    public function totalPaidThisMonth(int $companyId): float;
 
-    public function recentPaid(int $limit): Collection;
+    public function recentPaid(int $limit, int $companyId): Collection;
 
-    public function pendingCount(): int;
+    public function pendingCount(int $companyId): int;
 }

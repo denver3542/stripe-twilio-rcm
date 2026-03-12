@@ -2,7 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\Company;
 use App\Models\PaymentLink;
+use App\Services\CompanyContext;
 use App\Services\PaymentLinkService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -21,11 +23,18 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
 
     public function __construct(
         private readonly array $linkIds,
+        private readonly int $companyId,
     ) {}
 
-    public function handle(PaymentLinkService $paymentLinkService): void
+    public function handle(PaymentLinkService $paymentLinkService, CompanyContext $companyContext): void
     {
+        $company = Company::findOrFail($this->companyId);
+        $companyContext->set($company);
+
+        $cacheKey = "batch_sms_sending_{$this->companyId}";
+
         $links = PaymentLink::with('client')
+            ->where('company_id', $this->companyId)
             ->whereIn('id', $this->linkIds)
             ->where('payment_status', 'pending')
             ->where('sms_status', 'not_sent')
@@ -33,14 +42,14 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
 
         $total = $links->count();
 
-        Cache::put('batch_sms_sending', [
+        Cache::put($cacheKey, [
             'total'      => $total,
             'processed'  => 0,
             'started_at' => now()->toISOString(),
         ], 3600);
 
         if ($total === 0) {
-            Cache::forget('batch_sms_sending');
+            Cache::forget($cacheKey);
             return;
         }
 
@@ -55,14 +64,14 @@ class BatchSendPaymentLinkSmsJob implements ShouldQueue
 
             $processed++;
 
-            Cache::put('batch_sms_sending', [
+            Cache::put($cacheKey, [
                 'total'      => $total,
                 'processed'  => $processed,
-                'started_at' => Cache::get('batch_sms_sending')['started_at'] ?? now()->toISOString(),
+                'started_at' => Cache::get($cacheKey)['started_at'] ?? now()->toISOString(),
             ], 3600);
         }
 
-        Cache::forget('batch_sms_sending');
-        Log::info("BatchSendPaymentLinkSmsJob: processed {$processed} of {$total} links");
+        Cache::forget($cacheKey);
+        Log::info("BatchSendPaymentLinkSmsJob: processed {$processed} of {$total} links for company #{$this->companyId}");
     }
 }

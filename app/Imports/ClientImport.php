@@ -51,6 +51,10 @@ class ClientImport implements ToCollection, WithChunkReading
 
     private int $rowNumber = 0;
 
+    public function __construct(
+        private readonly int $companyId,
+    ) {}
+
     public function chunkSize(): int
     {
         return 250;
@@ -149,8 +153,9 @@ class ClientImport implements ToCollection, WithChunkReading
         $claimTotal = (float) ($row[177] ?? 0);
 
         return Client::updateOrCreate(
-            ['external_patient_id' => (string) $extId],
+            ['external_patient_id' => (string) $extId, 'company_id' => $this->companyId],
             [
+                'company_id'             => $this->companyId,
                 'name'                   => $fullName,
                 'contact_name'           => $contactName,
                 'phone'                  => $phone,

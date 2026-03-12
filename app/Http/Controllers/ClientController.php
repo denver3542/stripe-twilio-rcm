@@ -9,8 +9,9 @@ use App\Jobs\SendPaymentLinkSmsJob;
 use App\Models\Client;
 use App\Models\PaymentLink;
 use App\Services\ClientService;
+use App\Services\CompanyContext;
+use App\Services\CompanyServiceFactory;
 use App\Services\PaymentLinkService;
-use App\Services\TwilioService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -22,11 +23,15 @@ class ClientController extends Controller
 {
     public function __construct(
         private readonly ClientService $clientService,
+        private readonly CompanyContext $companyContext,
     ) {}
 
     public function index(Request $request): Response
     {
-        $query = Client::query();
+        $companyId = $this->companyContext->getId();
+        $cacheKey  = "payment_links_generating_{$companyId}";
+
+        $query = Client::query()->where('company_id', $companyId);
 
         if ($search = trim((string) $request->input('search'))) {
             $query->where(function ($q) use ($search) {
@@ -53,7 +58,6 @@ class ClientController extends Controller
         }
 
         if ($amountRange = $request->input('amount_range')) {
-            // Effective balance: patient_balance if > 0, else outstanding_balance
             $effectiveBal = DB::raw('CASE WHEN patient_balance > 0 THEN patient_balance ELSE outstanding_balance END');
             if (str_ends_with($amountRange, '+')) {
                 $min = (float) rtrim($amountRange, '+');
@@ -69,8 +73,8 @@ class ClientController extends Controller
 
         return Inertia::render('Clients/Index', [
             'clients'    => $query->withCount(['paymentLinks as pending_links_count' => fn ($q) => $q->where('payment_status', 'pending')])->paginate(20)->withQueryString(),
-            'filters'    => $request->only(['search', 'status', 'link_status', 'link_sms_status', 'amount_range']),
-            'generating' => Cache::get('payment_links_generating'),
+            'filters'    => (object) array_filter($request->only(['search', 'status', 'link_status', 'link_sms_status', 'amount_range', 'sort', 'direction']), fn ($v) => $v !== null),
+            'generating' => Cache::get($cacheKey),
         ]);
     }
 
@@ -81,7 +85,9 @@ class ClientController extends Controller
 
     public function store(StoreClientRequest $request): RedirectResponse
     {
-        $client = $this->clientService->store($request->validated());
+        $client = $this->clientService->store(
+            array_merge($request->validated(), ['company_id' => $this->companyContext->getId()])
+        );
 
         return redirect()->route('clients.show', $client);
     }
@@ -124,7 +130,11 @@ class ClientController extends Controller
 
     public function generateAllPaymentLinks(): RedirectResponse
     {
-        $clientIds = Client::whereDoesntHave('paymentLinks', function ($q) {
+        $companyId = $this->companyContext->getId();
+        $cacheKey  = "payment_links_generating_{$companyId}";
+
+        $clientIds = Client::where('company_id', $companyId)
+            ->whereDoesntHave('paymentLinks', function ($q) {
                 $q->where('payment_status', 'pending');
             })
             ->where(function ($q) {
@@ -140,14 +150,14 @@ class ClientController extends Controller
 
         $count = count($clientIds);
 
-        // Set initial progress so the UI can show it immediately
-        Cache::put('payment_links_generating', [
+        Cache::put($cacheKey, [
             'total'      => $count,
             'processed'  => 0,
             'started_at' => now()->toISOString(),
         ], 3600);
 
-        GenerateClientPaymentLinksJob::dispatch($clientIds);
+        GenerateClientPaymentLinksJob::dispatch($clientIds, $companyId);
+
         return redirect()->back()->with(
             'success',
             "Queued payment link generation for {$count} " . ($count === 1 ? 'client' : 'clients') . '.'
@@ -156,12 +166,14 @@ class ClientController extends Controller
 
     public function cancelPaymentLinkGeneration(): RedirectResponse
     {
-        // Remove any queued (not yet reserved) jobs for this class
+        $companyId = $this->companyContext->getId();
+        $cacheKey  = "payment_links_generating_{$companyId}";
+
         $deleted = DB::table('jobs')
             ->where('payload', 'like', '%GenerateClientPaymentLinksJob%')
             ->delete();
 
-        Cache::forget('payment_links_generating');
+        Cache::forget($cacheKey);
 
         $msg = $deleted > 0
             ? 'Payment link generation cancelled.'
@@ -177,16 +189,20 @@ class ClientController extends Controller
             'client_ids.*' => ['integer', 'exists:clients,id'],
         ]);
 
-        $clients = Client::whereIn('id', $request->client_ids)
-            ->whereNotNull('phone')
-            ->orWhereNotNull('mobile_phone')
+        $companyId = $this->companyContext->getId();
+
+        $clients = Client::where('company_id', $companyId)
+            ->whereIn('id', $request->client_ids)
+            ->where(function ($q) {
+                $q->whereNotNull('phone')->orWhereNotNull('mobile_phone');
+            })
             ->get();
 
         $dispatched = 0;
         foreach ($clients as $client) {
             $phone = $client->mobile_phone ?? $client->phone;
             if ($phone) {
-                SendPaymentLinkSmsJob::dispatch($client->id, $phone);
+                SendPaymentLinkSmsJob::dispatch($client->id, $phone, $companyId);
                 $dispatched++;
             }
         }
@@ -203,8 +219,10 @@ class ClientController extends Controller
             'phone' => ['required', 'string', 'regex:/^\+?[\d\s\-().]{7,20}$/'],
         ]);
 
-        // Find most recent pending payment link, or generate one
+        $companyId = $this->companyContext->getId();
+
         $link = PaymentLink::where('client_id', $client->id)
+            ->where('company_id', $companyId)
             ->where('payment_status', 'pending')
             ->latest()
             ->first();
@@ -222,15 +240,18 @@ class ClientController extends Controller
             }
         }
 
-        $firstName = $client->first_name ?? '';
-        $lastName  = $client->last_name  ?? '';
-        $name      = trim($client->name ?? "{$firstName} {$lastName}") ?: 'there';
+        $firstName   = $client->first_name ?? '';
+        $lastName    = $client->last_name  ?? '';
+        $name        = trim($client->name ?? "{$firstName} {$lastName}") ?: 'there';
+        $companyName = $this->companyContext->getName();
 
         $phone = $this->normalizePhone($request->phone);
-        $body  = "Hi {$name}, you have an outstanding balance of \${$link->amount}. "
+        $body  = "{$companyName}: Hi {$name}, you have an outstanding balance of \${$link->amount}. "
             . "Please make your payment here: {$link->stripe_payment_link_url}\n\nReply STOP to opt out.";
 
-        app(TwilioService::class)->sendSms($phone, $body);
+        app(CompanyServiceFactory::class)
+            ->makeTwilio($this->companyContext->get())
+            ->sendSms($phone, $body);
 
         return redirect()->back()->with('success', "Payment link sent to {$request->phone}.");
     }

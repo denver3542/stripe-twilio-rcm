@@ -4,8 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Client;
 use App\Models\ClientPayment;
+use App\Models\Company;
+use App\Services\CompanyContext;
+use App\Services\CompanyServiceFactory;
 use App\Services\PaymentLinkService;
-use App\Services\StripeService;
+use App\Services\RcmPortalService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -16,37 +19,52 @@ use Stripe\Exception\SignatureVerificationException;
 class StripeWebhookController extends Controller
 {
     public function __construct(
-        private readonly StripeService $stripeService,
+        private readonly CompanyServiceFactory $factory,
         private readonly PaymentLinkService $paymentLinkService,
+        private readonly RcmPortalService $rcmPortalService,
+        private readonly CompanyContext $companyContext,
     ) {}
 
-    public function __invoke(Request $request): JsonResponse
+    public function __invoke(Request $request, string $companySlug): JsonResponse
     {
+        // 1. Resolve company by stripe_config_key slug from URL
+        $company = Company::where('stripe_config_key', strtoupper($companySlug))
+            ->where('is_active', true)
+            ->first();
+
+        if (! $company) {
+            Log::warning("Stripe webhook: unknown company slug [{$companySlug}]");
+            return response()->json(['error' => 'Unknown company'], 404);
+        }
+
+        // 2. Set company context (PaymentLinkService will use it)
+        $this->companyContext->set($company);
+
+        // 3. Verify webhook signature using company-specific secret
         $payload   = $request->getContent();
         $signature = $request->header('Stripe-Signature', '');
 
         try {
-            $event = $this->stripeService->constructWebhookEvent($payload, $signature);
+            $event = $this->factory->makeStripe($company)->constructWebhookEvent($payload, $signature);
         } catch (SignatureVerificationException $e) {
-            Log::error('Stripe webhook signature verification failed: ' . $e->getMessage());
+            Log::error("Stripe webhook signature failed for company [{$company->id}]: " . $e->getMessage());
             return response()->json(['error' => 'Invalid signature'], 400);
         }
 
+        Log::info("Stripe webhook received for company [{$company->name}]: {$event->type}");
+
         $session = $event->data->object;
 
-        Log::info("Stripe webhook received: {$event->type}");
-
         match ($event->type) {
-            'checkout.session.completed' => $this->handleSessionCompleted($session),
+            'checkout.session.completed' => $this->handleSessionCompleted($session, $company),
             default                      => null,
         };
 
         return response()->json(['received' => true]);
     }
 
-    private function handleSessionCompleted(object $session): void
+    private function handleSessionCompleted(object $session, Company $company): void
     {
-        // Mark the PaymentLink record as paid (matched by Stripe payment link ID)
         $stripePaymentLinkId = is_string($session->payment_link)
             ? $session->payment_link
             : ($session->payment_link->id ?? null);
@@ -58,33 +76,36 @@ class StripeWebhookController extends Controller
             Log::warning("Webhook: checkout.session.completed has no payment_link", ['session' => $session->id]);
         }
 
-        // Record client payment and reduce balance
         $metadata = $session->metadata ?? null;
         if ($metadata && isset($metadata->client_id)) {
-            $this->recordClientPayment($session, (int) $metadata->client_id);
+            $this->recordClientPayment($session, (int) $metadata->client_id, $company);
         } else {
             Log::warning("Webhook: no client_id in session metadata", ['session' => $session->id]);
         }
     }
 
-    private function recordClientPayment(object $session, int $clientId): void
+    private function recordClientPayment(object $session, int $clientId, Company $company): void
     {
-        $client = Client::find($clientId);
+        $client = Client::where('company_id', $company->id)->find($clientId);
 
         if (! $client) {
             return;
         }
 
-        // Guard against duplicate webhook deliveries
         if (ClientPayment::where('stripe_session_id', $session->id)->exists()) {
             return;
         }
 
         $amountPaid = $session->amount_total / 100;
         $paidAt     = Carbon::createFromTimestamp($session->created);
+        $becamePaid = false;
+
+        DB::transaction(function () use ($client, $session, $amountPaid, $paidAt, $company, &$becamePaid) {
+            $client = Client::where('company_id', $company->id)->lockForUpdate()->find($client->id);
 
         DB::transaction(function () use ($client, $session, $amountPaid, $paidAt) {
             ClientPayment::create([
+                'company_id'             => $company->id,
                 'client_id'              => $client->id,
                 'amount_paid'            => $amountPaid,
                 'stripe_session_id'      => $session->id,
@@ -92,7 +113,6 @@ class StripeWebhookController extends Controller
                 'paid_at'                => $paidAt,
             ]);
 
-            // Reduce the client's balance by the amount paid
             $patientBal = (float) $client->patient_balance;
             if ($patientBal > 0) {
                 $client->update(['patient_balance' => max(0, $patientBal - $amountPaid)]);
@@ -101,7 +121,6 @@ class StripeWebhookController extends Controller
                 $client->update(['outstanding_balance' => max(0, $outstandingBal - $amountPaid)]);
             }
 
-            // Refresh to get updated balances, then mark account as paid if fully cleared
             $client->refresh();
             if ((float) $client->patient_balance <= 0 && (float) $client->outstanding_balance <= 0) {
                 $client->update(['account_status' => 'paid']);
@@ -110,5 +129,13 @@ class StripeWebhookController extends Controller
 
             Log::info("Webhook: recorded payment for client #{$client->id}", ['amount' => $amountPaid]);
         });
+
+        if ($becamePaid && $client->external_patient_id) {
+            $this->rcmPortalService->updatePatientStatus(
+                (string) $client->external_patient_id,
+                $client->id,
+                'webhook'
+            );
+        }
     }
 }

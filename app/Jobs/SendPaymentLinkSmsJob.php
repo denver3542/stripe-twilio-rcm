@@ -3,7 +3,10 @@
 namespace App\Jobs;
 
 use App\Models\Client;
+use App\Models\Company;
 use App\Models\PaymentLink;
+use App\Services\CompanyContext;
+use App\Services\CompanyServiceFactory;
 use App\Services\PaymentLinkService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -22,24 +25,30 @@ class SendPaymentLinkSmsJob implements ShouldQueue
     public function __construct(
         private readonly int $clientId,
         private readonly string $phone,
+        private readonly int $companyId,
     ) {}
 
-    public function handle(PaymentLinkService $paymentLinkService): void
-    {
-        $client = Client::find($this->clientId);
+    public function handle(
+        PaymentLinkService $paymentLinkService,
+        CompanyContext $companyContext,
+        CompanyServiceFactory $factory,
+    ): void {
+        $company = Company::findOrFail($this->companyId);
+        $companyContext->set($company);
+
+        $client = Client::where('company_id', $this->companyId)->find($this->clientId);
 
         if (! $client) {
-            Log::warning("SendPaymentLinkSmsJob: client #{$this->clientId} not found.");
+            Log::warning("SendPaymentLinkSmsJob: client #{$this->clientId} not found for company #{$this->companyId}.");
             return;
         }
 
-        // Find the most recent pending payment link for this client
         $link = PaymentLink::where('client_id', $client->id)
+            ->where('company_id', $this->companyId)
             ->where('payment_status', 'pending')
             ->latest()
             ->first();
 
-        // Generate one on-the-fly if none exists
         if (! $link) {
             $patientBal = (float) $client->patient_balance;
             $amount = $patientBal > 0 ? $patientBal : (float) $client->outstanding_balance;
@@ -55,20 +64,16 @@ class SendPaymentLinkSmsJob implements ShouldQueue
             }
         }
 
-        // Override the phone on the link's client temporarily so sendSms uses the correct number
-        $client->setRelation('_smsPhone', $this->phone);
-
-        // Build and send SMS directly (reuse normalized phone from this job)
         $normalizedPhone = $this->normalizePhone($this->phone);
-        $firstName = $client->first_name ?? '';
-        $lastName  = $client->last_name  ?? '';
-        $name      = trim($client->name ?? "{$firstName} {$lastName}") ?: 'there';
-        $body      = "Hi {$name}, you have an outstanding balance of \${$link->amount}. "
+        $firstName   = $client->first_name ?? '';
+        $lastName    = $client->last_name  ?? '';
+        $name        = trim($client->name ?? "{$firstName} {$lastName}") ?: 'there';
+        $companyName = $company->name;
+
+        $body = "{$companyName}: Hi {$name}, you have an outstanding balance of \${$link->amount}. "
             . "Please make your payment here: {$link->stripe_payment_link_url}\n\nReply STOP to opt out.";
 
-        // Resolve TwilioService directly since we need a custom phone
-        $twilio = app(\App\Services\TwilioService::class);
-        $result = $twilio->sendSms($normalizedPhone, $body);
+        $result = $factory->makeTwilio($company)->sendSms($normalizedPhone, $body);
 
         if ($result['status'] === 'failed') {
             Log::warning("SendPaymentLinkSmsJob: SMS failed for client #{$this->clientId}: " . ($result['error'] ?? ''));

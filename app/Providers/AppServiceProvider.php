@@ -10,6 +10,8 @@ use App\Repositories\Contracts\PaymentLinkRepositoryInterface;
 use App\Repositories\Contracts\UserRepositoryInterface;
 use App\Repositories\PaymentLinkRepository;
 use App\Repositories\UserRepository;
+use App\Services\CompanyContext;
+use App\Services\CompanyServiceFactory;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -20,10 +22,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(UserRepositoryInterface::class,       UserRepository::class);
-        $this->app->bind(AuthRepositoryInterface::class,       AuthRepository::class);
-        $this->app->bind(ClientRepositoryInterface::class,     ClientRepository::class);
+        $this->app->bind(UserRepositoryInterface::class,        UserRepository::class);
+        $this->app->bind(AuthRepositoryInterface::class,        AuthRepository::class);
+        $this->app->bind(ClientRepositoryInterface::class,      ClientRepository::class);
         $this->app->bind(PaymentLinkRepositoryInterface::class, PaymentLinkRepository::class);
+
+        // CompanyContext is a per-request singleton that holds the active company.
+        // CompanyServiceFactory is stateless and safe to share across the request.
+        $this->app->singleton(CompanyContext::class);
+        $this->app->singleton(CompanyServiceFactory::class);
     }
 
     /**

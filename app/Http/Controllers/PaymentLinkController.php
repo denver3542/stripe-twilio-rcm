@@ -7,6 +7,7 @@ use App\Jobs\BatchSendPaymentLinkSmsJob;
 use App\Jobs\FetchAllPaymentStatusesJob;
 use App\Models\Client;
 use App\Models\PaymentLink;
+use App\Services\CompanyContext;
 use App\Services\PaymentLinkService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,24 +20,54 @@ class PaymentLinkController extends Controller
 {
     public function __construct(
         private readonly PaymentLinkService $paymentLinkService,
+        private readonly CompanyContext $companyContext,
     ) {}
 
     public function index(Request $request): Response
     {
-        $search      = trim((string) $request->input('search'));
-        $status      = $request->input('status');
-        $smsStatus   = $request->input('sms_status');
-        $amountRange = $request->input('amount_range');
+        $companyId     = $this->companyContext->getId();
+        $batchCacheKey = "batch_sms_sending_{$companyId}";
 
-        // ── Main table query ────────────────────────────────────────────────────
-        $query = PaymentLink::with('client')->latest();
+        $search       = trim((string) $request->input('search'));
+        $status       = $request->input('status');
+        $smsStatus    = $request->input('sms_status');
+        $amountRange  = $request->input('amount_range');
+        $smsSentFrom  = $request->input('sms_sent_from');
+        $smsSentTo    = $request->input('sms_sent_to');
+
+        $allowedSorts = ['created_at', 'amount', 'payment_status', 'sms_status', 'sms_sent_at', 'paid_at', 'client_name'];
+        $sort = in_array($request->input('sort'), $allowedSorts) ? $request->input('sort') : 'created_at';
+        $dir  = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+
+        if ($sort === 'client_name') {
+            $query = PaymentLink::with('client')
+                ->join('clients', 'clients.id', '=', 'payment_links.client_id')
+                ->select('payment_links.*')
+                ->where('payment_links.company_id', $companyId)
+                ->orderByRaw("COALESCE(clients.last_name, clients.name, '') {$dir}")
+                ->orderByRaw("COALESCE(clients.first_name, '') {$dir}");
+        } else {
+            $query = PaymentLink::with('client')
+                ->where('payment_links.company_id', $companyId)
+                ->orderBy($sort, $dir);
+        }
 
         if ($status) {
-            $query->where('payment_status', $status);
+            $query->where('payment_links.payment_status', $status);
         }
 
         if ($smsStatus) {
-            $query->where('sms_status', $smsStatus);
+            $query->where('payment_links.sms_status', $smsStatus);
+        }
+
+        $displayTz = config('app.display_timezone');
+
+        if ($smsSentFrom) {
+            $query->where('payment_links.sms_sent_at', '>=', \Carbon\Carbon::parse($smsSentFrom, $displayTz)->startOfDay()->utc());
+        }
+
+        if ($smsSentTo) {
+            $query->where('payment_links.sms_sent_at', '<=', \Carbon\Carbon::parse($smsSentTo, $displayTz)->endOfDay()->utc());
         }
 
         if ($search) {
@@ -50,15 +81,18 @@ class PaymentLinkController extends Controller
 
         if ($amountRange) {
             if (str_ends_with($amountRange, '+')) {
-                $query->where('amount', '>=', (float) rtrim($amountRange, '+'));
+                $query->where('payment_links.amount', '>=', (float) rtrim($amountRange, '+'));
             } else {
                 [$min, $max] = explode('-', $amountRange);
-                $query->whereBetween('amount', [(float) $min, (float) $max]);
+                $query->whereBetween('payment_links.amount', [(float) $min, (float) $max]);
             }
         }
 
-        // ── Batch computation — always unsent+pending, but respects search & amount filters ──
-        $batchBase = PaymentLink::where('sms_status', 'not_sent')->where('payment_status', 'pending');
+        // Batch computation — always unsent+pending for this company
+        $batchBase = PaymentLink::where('company_id', $companyId)
+            ->where('sms_status', 'not_sent')
+            ->where('payment_status', 'pending')
+            ->whereHas('client', fn ($q) => $q->where('exclude_from_payment_links', false));
 
         if ($search) {
             $batchBase->whereHas('client', function ($q) use ($search) {
@@ -88,10 +122,23 @@ class PaymentLinkController extends Controller
 
         $batchExplicit = $request->has('batch');
 
-        // When a batch is explicitly selected, restrict the table to those links only
         if ($batchExplicit && !empty($nextBatchIds)) {
-            $query->whereIn('id', $nextBatchIds);
+            $query->whereIn('payment_links.id', $nextBatchIds);
         }
+
+        // Stats scoped to active company
+        $stats = [
+            'total'                => PaymentLink::where('company_id', $companyId)->count(),
+            'paid'                 => PaymentLink::where('company_id', $companyId)->where('payment_status', 'paid')->count(),
+            'pending'              => PaymentLink::where('company_id', $companyId)->where('payment_status', 'pending')->count(),
+            'expired'              => PaymentLink::where('company_id', $companyId)->where('payment_status', 'expired')->count(),
+            'failed'               => PaymentLink::where('company_id', $companyId)->where('payment_status', 'failed')->count(),
+            'sms_sent'             => PaymentLink::where('company_id', $companyId)->where('sms_status', 'sent')->count(),
+            'sms_not_sent'         => PaymentLink::where('company_id', $companyId)->where('sms_status', 'not_sent')->count(),
+            'sms_failed'           => PaymentLink::where('company_id', $companyId)->where('sms_status', 'failed')->count(),
+            'total_paid_amount'    => (float) PaymentLink::where('company_id', $companyId)->where('payment_status', 'paid')->sum('amount'),
+            'total_pending_amount' => (float) PaymentLink::where('company_id', $companyId)->where('payment_status', 'pending')->sum('amount'),
+        ];
 
         return Inertia::render('PaymentLinks/Index', [
             'links'          => $query->paginate(25)->withQueryString(),
@@ -101,7 +148,8 @@ class PaymentLinkController extends Controller
             'current_batch'  => $currentBatch,
             'batch_explicit' => $batchExplicit,
             'next_batch_ids' => $nextBatchIds,
-            'sending'        => Cache::get('batch_sms_sending'),
+            'sending'        => Cache::get($batchCacheKey),
+            'stats'          => $stats,
         ]);
     }
 
@@ -134,7 +182,10 @@ class PaymentLinkController extends Controller
             'link_ids.*' => ['integer', 'exists:payment_links,id'],
         ]);
 
-        $eligible = PaymentLink::whereIn('id', $request->link_ids)
+        $companyId = $this->companyContext->getId();
+
+        $eligible = PaymentLink::where('company_id', $companyId)
+            ->whereIn('id', $request->link_ids)
             ->where('payment_status', 'pending')
             ->where('sms_status', 'not_sent')
             ->count();
@@ -143,7 +194,7 @@ class PaymentLinkController extends Controller
             return redirect()->back()->with('error', 'No eligible payment links in the selected batch.');
         }
 
-        BatchSendPaymentLinkSmsJob::dispatch($request->link_ids);
+        BatchSendPaymentLinkSmsJob::dispatch($request->link_ids, $companyId);
 
         return redirect()->back()->with('success', "Queued SMS for up to {$eligible} payment links.");
     }
@@ -172,7 +223,10 @@ class PaymentLinkController extends Controller
 
     public function fetchAllStatuses(): RedirectResponse
     {
-        $pending = PaymentLink::where('payment_status', 'pending')
+        $companyId = $this->companyContext->getId();
+
+        $pending = PaymentLink::where('company_id', $companyId)
+            ->where('payment_status', 'pending')
             ->whereNotNull('stripe_payment_link_id')
             ->count();
 
@@ -180,7 +234,7 @@ class PaymentLinkController extends Controller
             return redirect()->back()->with('info', 'No pending payment links to check.');
         }
 
-        FetchAllPaymentStatusesJob::dispatch();
+        FetchAllPaymentStatusesJob::dispatch($companyId);
 
         return redirect()->back()->with('success', "Queued status check for {$pending} pending payment links. Refresh in a moment.");
     }
