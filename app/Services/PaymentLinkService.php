@@ -61,7 +61,7 @@ class PaymentLinkService
 
         $firstName = trim($client->first_name ?? '') ?: trim($client->name ?? '') ?: "Patient #{$client->id}";
 
-        $body = "True Sport PT: Hi {$firstName}, you have a \${$link->amount} balance due. "
+        $body = "True Sport Physical Therapy: Hi {$firstName}, you have a \${$link->amount} balance due. "
             . "Pay here: {$link->stripe_payment_link_url}. "
             . "Questions? Call (443) 249-2990. Thank you!";
 
